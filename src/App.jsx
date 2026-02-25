@@ -10,9 +10,16 @@ export default function App() {
   const [view, setView] = useState('home') // 'home' | 'list'
   const [showForm, setShowForm] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [savedCount, setSavedCount] = useState(1)
 
   function handleSave(data) {
-    addTask(data)
+    if (Array.isArray(data)) {
+      data.forEach(task => addTask(task))
+      setSavedCount(data.length)
+    } else {
+      addTask(data)
+      setSavedCount(1)
+    }
     setShowForm(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 1800)
@@ -51,7 +58,9 @@ export default function App() {
 
       {/* Saved toast */}
       {saved && (
-        <div className="toast">Task saved ✓</div>
+        <div className="toast">
+          {savedCount > 1 ? `${savedCount} tasks saved ✓` : 'Task saved ✓'}
+        </div>
       )}
 
       {/* Dump button */}

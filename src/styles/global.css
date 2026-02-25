@@ -548,6 +548,66 @@ body {
 
 .time-btn:active { transform: scale(0.96); }
 
+/* ─── Split flow ─── */
+.split-prompt {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.split-prompt-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.split-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.split-loading {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.split-spinner {
+  font-size: 40px;
+  animation: spinnerPulse 1s ease-in-out infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spinnerPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.2); opacity: 0.6; }
+}
+
+.split-loading-text {
+  font-size: 18px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.split-task-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.split-task-item {
+  background: var(--accent-lt);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
 /* ─── Step dots ─── */
 .step-dots {
   display: flex;

@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { TIME_ESTIMATES, suggestTimeEstimate } from '../utils/taskUtils'
 
-const STEPS = ['text', 'urgency', 'anxiety', 'time']
-
 const URGENCY_OPTIONS = [
   { value: 1, emoji: '🟢', label: 'Whenever' },
   { value: 2, emoji: '🟡', label: 'Soon' },
@@ -15,6 +13,16 @@ const ANXIETY_OPTIONS = [
   { value: 3, emoji: '😬', label: 'Dreading it' },
 ]
 
+function mightBeMultiple(text) {
+  const lower = text.toLowerCase()
+  return (
+    lower.includes(' and ') ||
+    lower.includes(' then ') ||
+    lower.includes(' also ') ||
+    text.includes(',')
+  )
+}
+
 export default function TaskForm({ onSave, onCancel }) {
   const [step, setStep] = useState('text')
   const [text, setText] = useState('')
@@ -22,6 +30,8 @@ export default function TaskForm({ onSave, onCancel }) {
   const [anxiety, setAnxiety] = useState(null)
   const [timeEstimate, setTimeEstimate] = useState(null)
   const [suggested, setSuggested] = useState(null)
+  const [isSplitting, setIsSplitting] = useState(false)
+  const [splitTasks, setSplitTasks] = useState([])
   const textRef = useRef(null)
 
   useEffect(() => {
@@ -36,7 +46,32 @@ export default function TaskForm({ onSave, onCancel }) {
     const suggestion = suggestTimeEstimate(text.trim())
     setSuggested(suggestion)
     setTimeEstimate(suggestion)
-    setStep('urgency')
+    if (mightBeMultiple(text.trim())) {
+      setStep('split-prompt')
+    } else {
+      setStep('urgency')
+    }
+  }
+
+  async function handleSplitYes() {
+    setStep('split-loading')
+    try {
+      const res = await fetch('/api/split-task', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: text.trim() })
+      })
+      const data = await res.json()
+      if (data.tasks && Array.isArray(data.tasks) && data.tasks.length > 1) {
+        setSplitTasks(data.tasks)
+        setIsSplitting(true)
+        setStep('split-review')
+      } else {
+        setStep('urgency')
+      }
+    } catch {
+      setStep('urgency')
+    }
   }
 
   function handleUrgency(val) {
@@ -46,12 +81,20 @@ export default function TaskForm({ onSave, onCancel }) {
 
   function handleAnxiety(val) {
     setAnxiety(val)
-    setStep('time')
+    if (isSplitting) {
+      onSave(splitTasks.map(t => ({
+        text: t,
+        urgency,
+        anxiety: val,
+        timeEstimate: suggestTimeEstimate(t),
+      })))
+    } else {
+      setStep('time')
+    }
   }
 
   function handleTime(val) {
-    const finalTime = val ?? timeEstimate
-    onSave({ text: text.trim(), urgency, anxiety, timeEstimate: finalTime })
+    onSave({ text: text.trim(), urgency, anxiety, timeEstimate: val ?? timeEstimate })
   }
 
   function handleVoice() {
@@ -63,15 +106,23 @@ export default function TaskForm({ onSave, onCancel }) {
     const recognition = new SR()
     recognition.lang = 'en-US'
     recognition.interimResults = false
-    recognition.onresult = (e) => {
-      setText(e.results[0][0].transcript)
-    }
+    recognition.onresult = (e) => { setText(e.results[0][0].transcript) }
     recognition.start()
   }
+
+  function keepAsOne() {
+    setIsSplitting(false)
+    setSplitTasks([])
+    setStep('urgency')
+  }
+
+  const dotSteps = isSplitting ? ['urgency', 'anxiety'] : ['urgency', 'anxiety', 'time']
+  const showDots = dotSteps.includes(step)
 
   return (
     <div className="form-overlay">
       <div className="form-card">
+
         {step === 'text' && (
           <>
             <p className="form-label">What's on your mind?</p>
@@ -105,9 +156,50 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
+        {step === 'split-prompt' && (
+          <div className="split-prompt">
+            <div className="split-prompt-icon">✂️</div>
+            <p className="form-label">Looks like there might be a few tasks here — want me to split them up?</p>
+            <div className="split-actions">
+              <button className="btn-primary" onClick={handleSplitYes}>
+                Yes, split it
+              </button>
+              <button className="btn-ghost" onClick={keepAsOne}>
+                Keep as one
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'split-loading' && (
+          <div className="split-loading">
+            <div className="split-spinner">✂️</div>
+            <p className="split-loading-text">Breaking it down…</p>
+          </div>
+        )}
+
+        {step === 'split-review' && (
+          <>
+            <p className="form-label">Found {splitTasks.length} tasks — look good?</p>
+            <ul className="split-task-list">
+              {splitTasks.map((t, i) => (
+                <li key={i} className="split-task-item">{t}</li>
+              ))}
+            </ul>
+            <div className="form-actions">
+              <button className="btn-ghost" onClick={keepAsOne}>
+                Keep as one
+              </button>
+              <button className="btn-primary" onClick={() => setStep('urgency')}>
+                Save {splitTasks.length} tasks →
+              </button>
+            </div>
+          </>
+        )}
+
         {step === 'urgency' && (
           <>
-            <p className="form-label">How urgent is this?</p>
+            <p className="form-label">How urgent {isSplitting ? 'are they' : 'is this'}?</p>
             <div className="rating-row">
               {URGENCY_OPTIONS.map(opt => (
                 <button
@@ -125,7 +217,7 @@ export default function TaskForm({ onSave, onCancel }) {
 
         {step === 'anxiety' && (
           <>
-            <p className="form-label">How does this feel?</p>
+            <p className="form-label">How {isSplitting ? 'do they feel' : 'does this feel'}?</p>
             <div className="rating-row">
               {ANXIETY_OPTIONS.map(opt => (
                 <button
@@ -161,13 +253,14 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
-        {step !== 'text' && (
+        {showDots && (
           <div className="step-dots">
-            {STEPS.map(s => (
+            {dotSteps.map(s => (
               <span key={s} className={`dot${s === step ? ' active' : ''}`} />
             ))}
           </div>
         )}
+
       </div>
     </div>
   )
