@@ -9,7 +9,7 @@ export const TIME_ESTIMATES = [
 // Which estimates fit within a given available-minutes budget
 const FITS_IN = {
   5:   ['under5'],
-  15:  ['under5', '5to15'],
+  15:  ['under5', '5to15', '15to30'],
   30:  ['under5', '5to15', '15to30'],
   999: ['under5', '5to15', '15to30', 'longer'],
 }

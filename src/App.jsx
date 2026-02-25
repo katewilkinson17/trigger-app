@@ -19,6 +19,7 @@ export default function App() {
   }
 
   const activeTasks = tasks.filter(t => !t.done)
+  const isEmpty = activeTasks.length === 0 && view === 'home'
 
   return (
     <div className="app">
@@ -31,11 +32,12 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main className="app-main">
+      <main className={`app-main${isEmpty ? ' app-main-empty' : ''}`}>
         {view === 'home' ? (
           <Widget
             tasks={tasks}
             onComplete={completeTask}
+            onDump={() => setShowForm(true)}
           />
         ) : (
           <TaskList
@@ -53,9 +55,9 @@ export default function App() {
       )}
 
       {/* Dump button */}
-      <div className="dump-area">
+      <div className={`dump-area${isEmpty ? ' expanded' : ''}`}>
         <button
-          className="dump-btn"
+          className={`dump-btn${isEmpty ? ' expanded' : ''}`}
           onClick={() => setShowForm(true)}
           aria-label="Add new task"
         >

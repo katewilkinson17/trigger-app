@@ -4,11 +4,23 @@ import { getSurfacedTasks, TIME_SLOTS, getTimeEstimateShort } from '../utils/tas
 const URGENCY_DOT = ['', '🟢', '🟡', '🔴']
 const URGENCY_LABEL = ['', 'Low urgency', 'Medium urgency', 'High urgency']
 
-export default function Widget({ tasks, onComplete }) {
+export default function Widget({ tasks, onComplete, onDump }) {
   const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[1]) // default: 15 min
 
   const surfaced = getSurfacedTasks(tasks, selectedSlot.minutes)
   const activeTasks = tasks.filter(t => !t.done)
+
+  if (activeTasks.length === 0) {
+    return (
+      <section className="widget widget-is-empty">
+        <div className="empty-hero" onClick={onDump} role="button" tabIndex={0}>
+          <div className="empty-hero-icon">🧠</div>
+          <p className="empty-hero-title">Brain clear?</p>
+          <p className="empty-hero-sub">Drop something here.</p>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="widget">
@@ -28,12 +40,7 @@ export default function Widget({ tasks, onComplete }) {
       </div>
 
       <div className="widget-body">
-        {activeTasks.length === 0 ? (
-          <div className="widget-empty">
-            <p>No tasks yet.</p>
-            <p className="muted">Tap the button below to add one.</p>
-          </div>
-        ) : surfaced.length === 0 ? (
+        {surfaced.length === 0 ? (
           <div className="widget-empty">
             <p>No tasks fit in {selectedSlot.label}.</p>
             <p className="muted">Try a longer time slot, or check your full list.</p>

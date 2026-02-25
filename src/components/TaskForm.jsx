@@ -3,8 +3,17 @@ import { TIME_ESTIMATES, suggestTimeEstimate } from '../utils/taskUtils'
 
 const STEPS = ['text', 'urgency', 'anxiety', 'time']
 
-const URGENCY_LABELS = ['', 'Can wait', 'Should do soon', 'Do it now']
-const ANXIETY_LABELS = ['', 'No stress', 'A little anxious', 'Really anxious']
+const URGENCY_OPTIONS = [
+  { value: 1, emoji: '🟢', label: 'Whenever' },
+  { value: 2, emoji: '🟡', label: 'Soon' },
+  { value: 3, emoji: '🔴', label: 'Today' },
+]
+
+const ANXIETY_OPTIONS = [
+  { value: 1, emoji: '😌', label: 'Easy' },
+  { value: 2, emoji: '😐', label: 'A little' },
+  { value: 3, emoji: '😬', label: 'Dreading it' },
+]
 
 export default function TaskForm({ onSave, onCancel }) {
   const [step, setStep] = useState('text')
@@ -100,14 +109,14 @@ export default function TaskForm({ onSave, onCancel }) {
           <>
             <p className="form-label">How urgent is this?</p>
             <div className="rating-row">
-              {[1, 2, 3].map(n => (
+              {URGENCY_OPTIONS.map(opt => (
                 <button
-                  key={n}
-                  className={`rating-btn rating-urgency-${n}`}
-                  onClick={() => handleUrgency(n)}
+                  key={opt.value}
+                  className={`rating-btn rating-urgency-${opt.value}`}
+                  onClick={() => handleUrgency(opt.value)}
                 >
-                  <span className="rating-num">{n}</span>
-                  <span className="rating-sub">{URGENCY_LABELS[n]}</span>
+                  <span className="rating-emoji">{opt.emoji}</span>
+                  <span className="rating-sub">{opt.label}</span>
                 </button>
               ))}
             </div>
@@ -116,16 +125,16 @@ export default function TaskForm({ onSave, onCancel }) {
 
         {step === 'anxiety' && (
           <>
-            <p className="form-label">How anxious does this make you?</p>
+            <p className="form-label">How does this feel?</p>
             <div className="rating-row">
-              {[1, 2, 3].map(n => (
+              {ANXIETY_OPTIONS.map(opt => (
                 <button
-                  key={n}
-                  className={`rating-btn rating-anxiety-${n}`}
-                  onClick={() => handleAnxiety(n)}
+                  key={opt.value}
+                  className={`rating-btn rating-anxiety-${opt.value}`}
+                  onClick={() => handleAnxiety(opt.value)}
                 >
-                  <span className="rating-num">{n}</span>
-                  <span className="rating-sub">{ANXIETY_LABELS[n]}</span>
+                  <span className="rating-emoji">{opt.emoji}</span>
+                  <span className="rating-sub">{opt.label}</span>
                 </button>
               ))}
             </div>
