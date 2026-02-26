@@ -35,7 +35,7 @@ export function useTasks() {
   }
 
   function completeTask(id) {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: true } : t))
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: true, completedAt: Date.now() } : t))
   }
 
   function deleteTask(id) {

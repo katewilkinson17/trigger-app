@@ -23,21 +23,39 @@ function mightBeMultiple(text) {
   )
 }
 
+// Local split — no API required
+function splitLocally(text) {
+  if (text.includes(',')) {
+    const parts = text.split(',').map(t => t.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+  const parts = text.split(/ and | then | also /i).map(t => t.trim()).filter(Boolean)
+  if (parts.length > 1) return parts
+  return [text]
+}
+
 export default function TaskForm({ onSave, onCancel }) {
   const [step, setStep] = useState('text')
   const [text, setText] = useState('')
+
+  // Per-step values (reset for each task in split flow)
   const [urgency, setUrgency] = useState(null)
   const [anxiety, setAnxiety] = useState(null)
   const [timeEstimate, setTimeEstimate] = useState(null)
   const [suggested, setSuggested] = useState(null)
-  const [isSplitting, setIsSplitting] = useState(false)
-  const [splitTasks, setSplitTasks] = useState([])
+
+  // Split flow state
+  const [splitQueue, setSplitQueue] = useState([])   // array of task text strings
+  const [splitIdx, setSplitIdx] = useState(0)         // which task we're rating
+  const [splitMeta, setSplitMeta] = useState([])      // collected {urgency,anxiety,timeEstimate}
+
   const textRef = useRef(null)
 
+  const isSplit = splitQueue.length > 1
+  const currentText = isSplit ? splitQueue[splitIdx] : text.trim()
+
   useEffect(() => {
-    if (step === 'text' && textRef.current) {
-      textRef.current.focus()
-    }
+    if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
 
   function handleTextSubmit(e) {
@@ -53,25 +71,39 @@ export default function TaskForm({ onSave, onCancel }) {
     }
   }
 
-  async function handleSplitYes() {
-    setStep('split-loading')
-    try {
-      const res = await fetch('/api/split-task', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: text.trim() })
-      })
-      const data = await res.json()
-      if (data.tasks && Array.isArray(data.tasks) && data.tasks.length > 1) {
-        setSplitTasks(data.tasks)
-        setIsSplitting(true)
-        setStep('split-review')
-      } else {
-        setStep('urgency')
-      }
-    } catch {
+  function handleSplitYes() {
+    const parts = splitLocally(text.trim())
+    if (parts.length > 1) {
+      setSplitQueue(parts)
+      setStep('split-review')
+    } else {
       setStep('urgency')
     }
+  }
+
+  // Begin rating each split task one at a time
+  function startSplitFlow() {
+    const idx = 0
+    setSplitIdx(idx)
+    setSplitMeta([])
+    const suggestion = suggestTimeEstimate(splitQueue[idx])
+    setSuggested(suggestion)
+    setTimeEstimate(suggestion)
+    setUrgency(null)
+    setAnxiety(null)
+    setStep('urgency')
+  }
+
+  function keepAsOne() {
+    setSplitQueue([])
+    setSplitIdx(0)
+    setSplitMeta([])
+    const suggestion = suggestTimeEstimate(text.trim())
+    setSuggested(suggestion)
+    setTimeEstimate(suggestion)
+    setUrgency(null)
+    setAnxiety(null)
+    setStep('urgency')
   }
 
   function handleUrgency(val) {
@@ -81,20 +113,31 @@ export default function TaskForm({ onSave, onCancel }) {
 
   function handleAnxiety(val) {
     setAnxiety(val)
-    if (isSplitting) {
-      onSave(splitTasks.map(t => ({
-        text: t,
-        urgency,
-        anxiety: val,
-        timeEstimate: suggestTimeEstimate(t),
-      })))
-    } else {
-      setStep('time')
-    }
+    setStep('time')
   }
 
   function handleTime(val) {
-    onSave({ text: text.trim(), urgency, anxiety, timeEstimate: val ?? timeEstimate })
+    const chosenTime = val ?? timeEstimate
+    if (isSplit) {
+      const newMeta = [...splitMeta, { urgency, anxiety, timeEstimate: chosenTime }]
+      if (splitIdx + 1 < splitQueue.length) {
+        // More tasks — advance to next
+        const nextIdx = splitIdx + 1
+        setSplitMeta(newMeta)
+        setSplitIdx(nextIdx)
+        const suggestion = suggestTimeEstimate(splitQueue[nextIdx])
+        setSuggested(suggestion)
+        setTimeEstimate(suggestion)
+        setUrgency(null)
+        setAnxiety(null)
+        setStep('urgency')
+      } else {
+        // All tasks rated — save them all
+        onSave(splitQueue.map((t, i) => ({ text: t, ...newMeta[i] })))
+      }
+    } else {
+      onSave({ text: text.trim(), urgency, anxiety, timeEstimate: chosenTime })
+    }
   }
 
   function handleVoice() {
@@ -110,19 +153,13 @@ export default function TaskForm({ onSave, onCancel }) {
     recognition.start()
   }
 
-  function keepAsOne() {
-    setIsSplitting(false)
-    setSplitTasks([])
-    setStep('urgency')
-  }
-
-  const dotSteps = isSplitting ? ['urgency', 'anxiety'] : ['urgency', 'anxiety', 'time']
-  const showDots = dotSteps.includes(step)
+  const inRatingSteps = ['urgency', 'anxiety', 'time'].includes(step)
 
   return (
     <div className="form-overlay">
       <div className="form-card">
 
+        {/* ── Text entry ── */}
         {step === 'text' && (
           <>
             <p className="form-label">What's on your mind?</p>
@@ -142,64 +179,52 @@ export default function TaskForm({ onSave, onCancel }) {
                 }}
               />
               <div className="form-actions">
-                <button type="button" className="btn-ghost" onClick={handleVoice}>
-                  🎤 Speak
-                </button>
-                <button type="button" className="btn-ghost" onClick={onCancel}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={!text.trim()}>
-                  Next
-                </button>
+                <button type="button" className="btn-ghost" onClick={handleVoice}>🎤 Speak</button>
+                <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={!text.trim()}>Next</button>
               </div>
             </form>
           </>
         )}
 
+        {/* ── Split prompt ── */}
         {step === 'split-prompt' && (
           <div className="split-prompt">
             <div className="split-prompt-icon">✂️</div>
             <p className="form-label">Looks like there might be a few tasks here — want me to split them up?</p>
             <div className="split-actions">
-              <button className="btn-primary" onClick={handleSplitYes}>
-                Yes, split it
-              </button>
-              <button className="btn-ghost" onClick={keepAsOne}>
-                Keep as one
-              </button>
+              <button className="btn-primary" onClick={handleSplitYes}>Yes, split it</button>
+              <button className="btn-ghost" onClick={keepAsOne}>Keep as one</button>
             </div>
           </div>
         )}
 
-        {step === 'split-loading' && (
-          <div className="split-loading">
-            <div className="split-spinner">✂️</div>
-            <p className="split-loading-text">Breaking it down…</p>
-          </div>
-        )}
-
+        {/* ── Split review ── */}
         {step === 'split-review' && (
           <>
-            <p className="form-label">Found {splitTasks.length} tasks — look good?</p>
+            <p className="form-label">Found {splitQueue.length} tasks — look good?</p>
             <ul className="split-task-list">
-              {splitTasks.map((t, i) => (
+              {splitQueue.map((t, i) => (
                 <li key={i} className="split-task-item">{t}</li>
               ))}
             </ul>
             <div className="form-actions">
-              <button className="btn-ghost" onClick={keepAsOne}>
-                Keep as one
-              </button>
-              <button className="btn-primary" onClick={() => setStep('urgency')}>
-                Save {splitTasks.length} tasks →
-              </button>
+              <button className="btn-ghost" onClick={keepAsOne}>Keep as one</button>
+              <button className="btn-primary" onClick={startSplitFlow}>Rate each →</button>
             </div>
           </>
         )}
 
+        {/* ── Urgency ── */}
         {step === 'urgency' && (
           <>
-            <p className="form-label">How urgent {isSplitting ? 'are they' : 'is this'}?</p>
+            {isSplit && (
+              <p className="form-hint">
+                <span className="split-progress-badge">{splitIdx + 1}/{splitQueue.length}</span>
+                <strong>{currentText}</strong>
+              </p>
+            )}
+            <p className="form-label">How urgent is this?</p>
             <div className="rating-row">
               {URGENCY_OPTIONS.map(opt => (
                 <button
@@ -215,9 +240,16 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
+        {/* ── Anxiety ── */}
         {step === 'anxiety' && (
           <>
-            <p className="form-label">How {isSplitting ? 'do they feel' : 'does this feel'}?</p>
+            {isSplit && (
+              <p className="form-hint">
+                <span className="split-progress-badge">{splitIdx + 1}/{splitQueue.length}</span>
+                <strong>{currentText}</strong>
+              </p>
+            )}
+            <p className="form-label">How does this feel?</p>
             <div className="rating-row">
               {ANXIETY_OPTIONS.map(opt => (
                 <button
@@ -233,8 +265,15 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
+        {/* ── Time estimate ── */}
         {step === 'time' && (
           <>
+            {isSplit && (
+              <p className="form-hint">
+                <span className="split-progress-badge">{splitIdx + 1}/{splitQueue.length}</span>
+                <strong>{currentText}</strong>
+              </p>
+            )}
             <p className="form-label">How long will this take?</p>
             {suggested && (
               <p className="form-hint">We think: <strong>{TIME_ESTIMATES.find(t => t.value === suggested)?.label}</strong></p>
@@ -253,9 +292,10 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
-        {showDots && (
+        {/* Step dots */}
+        {inRatingSteps && (
           <div className="step-dots">
-            {dotSteps.map(s => (
+            {['urgency', 'anxiety', 'time'].map(s => (
               <span key={s} className={`dot${s === step ? ' active' : ''}`} />
             ))}
           </div>
