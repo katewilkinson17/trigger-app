@@ -29,15 +29,17 @@ export function getTimeEstimateShort(value) {
   return TIME_ESTIMATES.find(t => t.value === value)?.short ?? value
 }
 
-// Surface the best tasks for available time
-// Sort: urgency desc, then anxiety asc (lower anxiety = easier to start)
+// Priority score: urgency (heavy), anxiety (medium), age in days (boost for old tasks)
+export function priorityScore(task) {
+  const ageDays = (Date.now() - (task.createdAt ?? 0)) / (1000 * 60 * 60 * 24)
+  return task.urgency * 4 + task.anxiety * 2 + Math.min(ageDays, 7)
+}
+
+// Surface the best tasks for available time, sorted by priority score
 export function getSurfacedTasks(tasks, availableMinutes, limit = 3) {
   const allowed = FITS_IN[availableMinutes] ?? FITS_IN[999]
   const active = tasks.filter(t => !t.done && allowed.includes(t.timeEstimate))
-  active.sort((a, b) => {
-    if (b.urgency !== a.urgency) return b.urgency - a.urgency
-    return a.anxiety - b.anxiety
-  })
+  active.sort((a, b) => priorityScore(b) - priorityScore(a))
   return active.slice(0, limit)
 }
 

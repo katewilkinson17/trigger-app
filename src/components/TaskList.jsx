@@ -1,10 +1,9 @@
-import { getTimeEstimateShort } from '../utils/taskUtils'
+import { getTimeEstimateShort, priorityScore } from '../utils/taskUtils'
 
 const URGENCY_DOT = ['', '🟢', '🟡', '🔴']
-const URGENCY_LABEL = ['', 'Low', 'Medium', 'High']
 
 export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
-  const active = tasks.filter(t => !t.done)
+  const active = tasks.filter(t => !t.done).sort((a, b) => priorityScore(b) - priorityScore(a))
   const done = tasks.filter(t => t.done)
 
   return (

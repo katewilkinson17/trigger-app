@@ -3,6 +3,7 @@ import { useTasks } from './hooks/useTasks'
 import Widget from './components/Widget'
 import TaskList from './components/TaskList'
 import TaskForm from './components/TaskForm'
+import DoMode from './components/DoMode'
 import './styles/global.css'
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [showForm, setShowForm] = useState(false)
   const [saved, setSaved] = useState(false)
   const [savedCount, setSavedCount] = useState(1)
+  const [doTask, setDoTask] = useState(null)
 
   function handleSave(data) {
     if (Array.isArray(data)) {
@@ -45,6 +47,7 @@ export default function App() {
             tasks={tasks}
             onComplete={completeTask}
             onDump={() => setShowForm(true)}
+            onDo={task => setDoTask(task)}
           />
         ) : (
           <TaskList
@@ -97,6 +100,15 @@ export default function App() {
         <TaskForm
           onSave={handleSave}
           onCancel={() => setShowForm(false)}
+        />
+      )}
+
+      {/* Do Mode overlay */}
+      {doTask && (
+        <DoMode
+          task={doTask}
+          onDone={() => { completeTask(doTask.id); setDoTask(null) }}
+          onSnooze={() => setDoTask(null)}
         />
       )}
     </div>

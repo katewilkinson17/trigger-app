@@ -4,7 +4,7 @@ import { getSurfacedTasks, TIME_SLOTS, getTimeEstimateShort } from '../utils/tas
 const URGENCY_DOT = ['', '🟢', '🟡', '🔴']
 const URGENCY_LABEL = ['', 'Low urgency', 'Medium urgency', 'High urgency']
 
-export default function Widget({ tasks, onComplete, onDump }) {
+export default function Widget({ tasks, onComplete, onDump, onDo }) {
   const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[1]) // default: 15 min
 
   const surfaced = getSurfacedTasks(tasks, selectedSlot.minutes)
@@ -61,13 +61,22 @@ export default function Widget({ tasks, onComplete, onDump }) {
                   </div>
                   <div className="task-card-meta">
                     <span className="task-time-badge">{getTimeEstimateShort(task.timeEstimate)}</span>
-                    <button
-                      className="btn-done"
-                      onClick={() => onComplete(task.id)}
-                      aria-label="Mark done"
-                    >
-                      ✓ Done
-                    </button>
+                    <div className="task-card-btns">
+                      <button
+                        className="btn-do"
+                        onClick={() => onDo(task)}
+                        aria-label="Start doing"
+                      >
+                        ▶ Do it
+                      </button>
+                      <button
+                        className="btn-done"
+                        onClick={() => onComplete(task.id)}
+                        aria-label="Mark done"
+                      >
+                        ✓
+                      </button>
+                    </div>
                   </div>
                 </li>
               ))}

@@ -782,6 +782,165 @@ body {
   to   { opacity: 0; }
 }
 
+/* ─── Do Mode ─── */
+.do-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+
+.do-back {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 8px 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.do-card {
+  width: 100%;
+  max-width: 380px;
+  padding: 0 24px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+}
+
+.do-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--accent);
+}
+
+.do-task-text {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  max-width: 320px;
+}
+
+.do-timer-wrap {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 4px 0;
+}
+
+.do-time-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.do-time {
+  font-size: 48px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.do-expired {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+.do-btn-pause {
+  background: none;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.do-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.do-btn-done {
+  flex: 2;
+  height: 58px;
+  background: var(--green);
+  color: white;
+  border: none;
+  border-radius: 30px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s;
+  box-shadow: 0 4px 16px rgba(46, 168, 126, 0.4);
+}
+
+.do-btn-done:active { transform: scale(0.96); }
+
+.do-btn-snooze {
+  flex: 1;
+  height: 58px;
+  background: var(--bg);
+  color: var(--muted);
+  border: 2px solid var(--border);
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.do-btn-snooze:active { opacity: 0.7; }
+
+/* ─── "Do it" button on task cards ─── */
+.task-card-btns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-do {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--accent-lt);
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s;
+  white-space: nowrap;
+}
+
+.btn-do:active { transform: scale(0.94); }
+
 /* ─── Utilities ─── */
 .muted { color: var(--muted); }
 
