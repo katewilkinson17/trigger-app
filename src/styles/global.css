@@ -1013,6 +1013,271 @@ body {
   vertical-align: middle;
 }
 
+/* ─── Task count (home screen) ─── */
+.task-count-friendly {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin-bottom: 12px;
+}
+
+/* ─── Voice input ─── */
+.voice-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0 8px;
+  gap: 8px;
+}
+
+.voice-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--accent-lt);
+  border: 2px solid var(--accent);
+  font-size: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s, background 0.15s;
+}
+
+.voice-btn:active { transform: scale(0.92); }
+
+.voice-btn-active {
+  background: var(--red-lt);
+  border-color: var(--red);
+  animation: voicePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voicePulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(232, 79, 79, 0.35); }
+  50%       { box-shadow: 0 0 0 14px rgba(232, 79, 79, 0); }
+}
+
+.voice-hint {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ─── Familiar toggle ─── */
+.familiar-row {
+  display: flex;
+  gap: 12px;
+}
+
+.familiar-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.familiar-btn:active { transform: scale(0.94); }
+.familiar-yes:active  { border-color: var(--green);  background: var(--green-lt); }
+.familiar-no:active   { border-color: var(--accent); background: var(--accent-lt); }
+
+.familiar-icon  { font-size: 36px; line-height: 1; }
+.familiar-label { font-size: 14px; font-weight: 600; color: var(--text); text-align: center; }
+
+/* ─── SUDS dread slider ─── */
+.suds-wrap {
+  width: 100%;
+  padding: 4px 0 8px;
+}
+
+.suds-value {
+  text-align: center;
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 4px;
+  transition: color 0.2s;
+}
+
+.suds-value-label {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 16px;
+  min-height: 20px;
+}
+
+.suds-slider {
+  width: 100%;
+  height: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.suds-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: grab;
+}
+
+.suds-slider::-moz-range-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: grab;
+}
+
+.suds-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ─── Novel task warning ─── */
+.novel-task-warning {
+  background: var(--yellow-lt);
+  border: 1.5px solid var(--yellow);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* ─── AI time adjust buttons ─── */
+.time-adjust-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.time-adjust-btn {
+  flex: 1;
+  padding: 14px 8px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.time-adjust-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.time-adjust-btn:not(:disabled):active {
+  background: var(--border);
+  color: var(--text);
+}
+
+.time-adjust-btn-main {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  flex: 1.4;
+}
+
+.time-adjust-btn-main:not(:disabled):active { opacity: 0.85; }
+
+/* ─── Deadline grid ─── */
+.deadline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.deadline-btn {
+  padding: 16px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+}
+
+.deadline-btn:active {
+  background: var(--accent-lt);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.deadline-btn-skip {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.deadline-date-input {
+  width: 100%;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  font-size: 17px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  transition: border-color 0.15s;
+  margin-bottom: 16px;
+}
+
+.deadline-date-input:focus { border-color: var(--accent); }
+
+/* ─── Undo button (warm orange link) ─── */
+.btn-undo-sm {
+  height: 36px;
+  padding: 0 10px;
+  background: none;
+  color: #C4621A;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Deadline badge on task rows ─── */
+.task-deadline-badge {
+  color: #9A6800;
+  background: var(--yellow-lt);
+}
+
 /* ─── Utilities ─── */
 .muted { color: var(--muted); }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
 const STORAGE_KEY = 'trigger_tasks'
+const HISTORY_KEY = 'trigger_history'
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
@@ -10,7 +11,19 @@ export function useTasks() {
   const [tasks, setTasks] = useState(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      return raw ? JSON.parse(raw) : []
+      const all = raw ? JSON.parse(raw) : []
+
+      // Archive any done tasks completed before today into history log (daily reset)
+      const todayStr = new Date().toDateString()
+      const toArchive = all.filter(
+        t => t.done && (!t.completedAt || new Date(t.completedAt).toDateString() !== todayStr)
+      )
+      if (toArchive.length > 0) {
+        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+        localStorage.setItem(HISTORY_KEY, JSON.stringify([...history, ...toArchive]))
+        return all.filter(t => !toArchive.some(a => a.id === t.id))
+      }
+      return all
     } catch {
       return []
     }
@@ -20,13 +33,15 @@ export function useTasks() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
   }, [tasks])
 
-  function addTask({ text, urgency, anxiety, timeEstimate }) {
+  function addTask({ text, urgency, dread, timeEstimate, familiar, deadline }) {
     const task = {
       id: generateId(),
       text,
       urgency,
-      anxiety,
+      dread,
       timeEstimate,
+      familiar,
+      deadline: deadline ?? null,
       done: false,
       createdAt: Date.now(),
     }
@@ -43,7 +58,8 @@ export function useTasks() {
   }
 
   function restoreTask(id) {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: false } : t))
+    // Clear completedAt so the task isn't immediately re-archived on next load
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: false, completedAt: null } : t))
   }
 
   return { tasks, addTask, completeTask, deleteTask, restoreTask }

@@ -2,15 +2,31 @@ import { getTimeEstimateShort, priorityScore } from '../utils/taskUtils'
 
 const URGENCY_DOT = ['', '🟢', '🟡', '🔴']
 
+function formatDeadline(deadline) {
+  if (!deadline) return null
+  if (deadline === 'thisWeek')  return '📅 This week'
+  if (deadline === 'thisMonth') return '📅 This month'
+  if (deadline?.date) {
+    const d = new Date(deadline.date)
+    return `📅 ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+  }
+  return null
+}
+
 export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
-  const active = tasks.filter(t => !t.done).sort((a, b) => priorityScore(b) - priorityScore(a))
-  const done = tasks.filter(t => t.done)
+  const active    = tasks.filter(t => !t.done).sort((a, b) => priorityScore(b) - priorityScore(a))
+  const doneToday = tasks.filter(t => t.done)
+
+  function handleComplete(id) {
+    if (navigator.vibrate) navigator.vibrate(50)
+    onComplete(id)
+  }
 
   return (
     <section className="task-list-view">
       <h2 className="section-title">All Tasks</h2>
 
-      {active.length === 0 && done.length === 0 && (
+      {active.length === 0 && doneToday.length === 0 && (
         <div className="list-empty">
           <p>Nothing here yet.</p>
           <p className="muted">Tap the big button to dump your first task.</p>
@@ -23,18 +39,18 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
             <TaskRow
               key={task.id}
               task={task}
-              onComplete={onComplete}
+              onComplete={handleComplete}
               onDelete={onDelete}
             />
           ))}
         </ul>
       )}
 
-      {done.length > 0 && (
+      {doneToday.length > 0 && (
         <>
-          <h3 className="section-subtitle">Done</h3>
+          <h3 className="section-subtitle">Done Today ✓</h3>
           <ul className="full-task-list done-list">
-            {done.map(task => (
+            {doneToday.map(task => (
               <TaskRow
                 key={task.id}
                 task={task}
@@ -51,6 +67,9 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
 }
 
 function TaskRow({ task, isDone, onComplete, onDelete, onRestore }) {
+  const dreadVal      = task.dread != null ? task.dread : null
+  const deadlineLabel = formatDeadline(task.deadline)
+
   return (
     <li className={`full-task-row${isDone ? ' done' : ''}`}>
       <div className="full-task-info">
@@ -61,14 +80,14 @@ function TaskRow({ task, isDone, onComplete, onDelete, onRestore }) {
           <span className="full-task-text">{task.text}</span>
           <div className="full-task-badges">
             <span className="task-time-badge">{getTimeEstimateShort(task.timeEstimate)}</span>
-            <span className="task-meta-badge">U:{task.urgency}</span>
-            <span className="task-meta-badge">A:{task.anxiety}</span>
+            {dreadVal != null && <span className="task-meta-badge">Dread: {dreadVal}</span>}
+            {deadlineLabel && <span className="task-meta-badge task-deadline-badge">{deadlineLabel}</span>}
           </div>
         </div>
       </div>
       <div className="full-task-actions">
         {isDone ? (
-          <button className="btn-ghost-sm" onClick={() => onRestore(task.id)}>Undo</button>
+          <button className="btn-undo-sm" onClick={() => onRestore(task.id)}>Undo</button>
         ) : (
           <button className="btn-done-sm" onClick={() => onComplete(task.id)}>✓</button>
         )}

@@ -82,6 +82,7 @@ export default function DoMode({ task, onDone, onSnooze }) {
   }, [running])
 
   function handleDone() {
+    if (navigator.vibrate) navigator.vibrate(50)
     setRunning(false)
     setCelebrating(true)
     setTimeout(onDone, 2000)

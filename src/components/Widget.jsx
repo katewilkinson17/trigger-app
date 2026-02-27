@@ -25,6 +25,9 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
   return (
     <section className="widget">
       <div className="widget-header">
+        <p className="task-count-friendly">
+          {activeTasks.length} thing{activeTasks.length !== 1 ? 's' : ''} on your mind
+        </p>
         <p className="widget-title">How much time do you have?</p>
         <div className="slot-row">
           {TIME_SLOTS.map(slot => (
@@ -71,7 +74,7 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
                       </button>
                       <button
                         className="btn-done"
-                        onClick={() => onComplete(task.id)}
+                        onClick={() => { if (navigator.vibrate) navigator.vibrate(50); onComplete(task.id) }}
                         aria-label="Mark done"
                       >
                         ✓

@@ -35,9 +35,6 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <span className="app-logo">Trigger</span>
-        {activeTasks.length > 0 && (
-          <span className="task-count">{activeTasks.length} task{activeTasks.length !== 1 ? 's' : ''}</span>
-        )}
       </header>
 
       {/* Main content */}

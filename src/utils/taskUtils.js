@@ -6,6 +6,8 @@ export const TIME_ESTIMATES = [
   { value: 'longer',  label: '30+ min',       short: '30m+',  minutes: 999 },
 ]
 
+export const TIME_ORDER = ['under5', '5to15', '15to30', 'longer']
+
 // Which estimates fit within a given available-minutes budget
 const FITS_IN = {
   5:   ['under5'],
@@ -29,10 +31,64 @@ export function getTimeEstimateShort(value) {
   return TIME_ESTIMATES.find(t => t.value === value)?.short ?? value
 }
 
-// Priority score: urgency (heavy), anxiety (medium), age in days (boost for old tasks)
+// AI time estimate: keyword + length heuristic, bumped one level for novel (unfamiliar) tasks
+export function aiTimeEstimate(text, familiar = true) {
+  const lower = text.toLowerCase()
+  const quickWords = ['reply', 'email', 'call', 'text', 'message', 'check', 'read', 'pay', 'book', 'schedule', 'remind']
+  const longWords  = ['write', 'create', 'build', 'plan', 'research', 'review', 'prepare', 'organize', 'clean', 'fix', 'update']
+
+  let base
+  if (quickWords.some(w => lower.includes(w)) || text.length < 30) base = 'under5'
+  else if (longWords.some(w => lower.includes(w)) || text.length > 80) base = '15to30'
+  else base = '5to15'
+
+  // Novel-task penalty: bump up one level
+  if (!familiar) {
+    const idx = TIME_ORDER.indexOf(base)
+    base = TIME_ORDER[Math.min(idx + 1, 3)]
+  }
+  return base
+}
+
+// Deadline urgency boost — recomputed fresh every render so it escalates automatically
+export function getDeadlineBoost(deadline) {
+  if (!deadline) return 0
+  const now = Date.now()
+  let dueMs
+
+  if (deadline === 'thisWeek') {
+    const d = new Date()
+    d.setDate(d.getDate() + (7 - d.getDay()))
+    d.setHours(23, 59, 59, 0)
+    dueMs = d.getTime()
+  } else if (deadline === 'thisMonth') {
+    const d = new Date()
+    d.setMonth(d.getMonth() + 1, 0)
+    d.setHours(23, 59, 59, 0)
+    dueMs = d.getTime()
+  } else if (deadline?.date) {
+    dueMs = new Date(deadline.date).getTime()
+  } else {
+    return 0
+  }
+
+  const daysLeft = (dueMs - now) / (1000 * 60 * 60 * 24)
+  if (daysLeft < 0)   return 20  // overdue
+  if (daysLeft <= 1)  return 15
+  if (daysLeft <= 3)  return 10
+  if (daysLeft <= 7)  return 6
+  if (daysLeft <= 14) return 3
+  if (daysLeft <= 30) return 1
+  return 0
+}
+
+// Priority score — backwards-compatible with old anxiety field (1-3) and new dread field (0-10)
 export function priorityScore(task) {
-  const ageDays = (Date.now() - (task.createdAt ?? 0)) / (1000 * 60 * 60 * 24)
-  return task.urgency * 4 + task.anxiety * 2 + Math.min(ageDays, 7)
+  const ageDays    = (Date.now() - (task.createdAt ?? 0)) / (1000 * 60 * 60 * 24)
+  const dreadScore = task.dread != null
+    ? task.dread * 0.6          // 0-10 → 0-6
+    : (task.anxiety ?? 0) * 2   // legacy 1-3 → 2-6
+  return task.urgency * 4 + dreadScore + Math.min(ageDays, 7) + getDeadlineBoost(task.deadline)
 }
 
 // Surface the best tasks for available time, sorted by priority score
@@ -41,15 +97,4 @@ export function getSurfacedTasks(tasks, availableMinutes, limit = 3) {
   const active = tasks.filter(t => !t.done && allowed.includes(t.timeEstimate))
   active.sort((a, b) => priorityScore(b) - priorityScore(a))
   return active.slice(0, limit)
-}
-
-// Auto-suggest a time estimate based on task text length / keywords
-export function suggestTimeEstimate(text) {
-  const lower = text.toLowerCase()
-  const quickWords = ['reply', 'email', 'call', 'text', 'message', 'check', 'read', 'pay', 'book', 'schedule', 'remind']
-  const longWords = ['write', 'create', 'build', 'plan', 'research', 'review', 'prepare', 'organize', 'clean', 'fix', 'update']
-
-  if (quickWords.some(w => lower.includes(w)) || text.length < 30) return 'under5'
-  if (longWords.some(w => lower.includes(w)) || text.length > 80) return '15to30'
-  return '5to15'
 }
