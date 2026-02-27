@@ -1,18 +1,32 @@
 import { useState } from 'react'
+import { useAuth } from './hooks/useAuth'
 import { useTasks } from './hooks/useTasks'
 import Widget from './components/Widget'
 import TaskList from './components/TaskList'
 import TaskForm from './components/TaskForm'
 import DoMode from './components/DoMode'
+import CelebrationOverlay from './components/CelebrationOverlay'
 import './styles/global.css'
 
 export default function App() {
-  const { tasks, addTask, completeTask, deleteTask, restoreTask } = useTasks()
-  const [view, setView] = useState('home') // 'home' | 'list'
+  const { user, loading: authLoading } = useAuth()
+  const { tasks, addTask, completeTask, deleteTask, restoreTask } = useTasks(user?.id)
+
+  const [view, setView]         = useState('home') // 'home' | 'list'
   const [showForm, setShowForm] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved]       = useState(false)
   const [savedCount, setSavedCount] = useState(1)
-  const [doTask, setDoTask] = useState(null)
+  const [doTask, setDoTask]     = useState(null)
+  const [celebratingTask, setCelebratingTask] = useState(null)
+
+  // ── Auth loading ────────────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="app-loading">
+        <div className="app-loading-spinner" />
+      </div>
+    )
+  }
 
   function handleSave(data) {
     if (Array.isArray(data)) {
@@ -25,6 +39,14 @@ export default function App() {
     setShowForm(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 1800)
+  }
+
+  function handleComplete(id) {
+    if (navigator.vibrate) navigator.vibrate(50)
+    const task = tasks.find(t => t.id === id)
+    completeTask(id)
+    setCelebratingTask(task ?? { text: '' })
+    setTimeout(() => setCelebratingTask(null), 1800)
   }
 
   const activeTasks = tasks.filter(t => !t.done)
@@ -42,14 +64,14 @@ export default function App() {
         {view === 'home' ? (
           <Widget
             tasks={tasks}
-            onComplete={completeTask}
+            onComplete={handleComplete}
             onDump={() => setShowForm(true)}
             onDo={task => setDoTask(task)}
           />
         ) : (
           <TaskList
             tasks={tasks}
-            onComplete={completeTask}
+            onComplete={handleComplete}
             onDelete={deleteTask}
             onRestore={restoreTask}
           />
@@ -107,6 +129,11 @@ export default function App() {
           onDone={() => { completeTask(doTask.id); setDoTask(null) }}
           onSnooze={() => setDoTask(null)}
         />
+      )}
+
+      {/* App-level celebration overlay */}
+      {celebratingTask && (
+        <CelebrationOverlay taskText={celebratingTask.text} />
       )}
     </div>
   )

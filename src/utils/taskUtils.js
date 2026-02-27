@@ -50,18 +50,51 @@ export function aiTimeEstimate(text, familiar = true) {
   return base
 }
 
+// Derive urgency from deadline (1=low, 2=medium, 3=high)
+export function deriveUrgency(deadline) {
+  if (!deadline) return 1
+  if (deadline === 'today' || deadline === 'tomorrow') return 3
+  if (deadline === 'inAFewDays') return 2
+  // backwards compat
+  if (deadline === 'thisWeek') return 2
+  if (deadline === 'thisMonth') return 1
+  if (deadline?.date) {
+    const daysLeft = (new Date(deadline.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    if (daysLeft <= 1) return 3
+    if (daysLeft <= 7) return 2
+    return 1
+  }
+  return 1
+}
+
 // Deadline urgency boost — recomputed fresh every render so it escalates automatically
 export function getDeadlineBoost(deadline) {
   if (!deadline) return 0
   const now = Date.now()
   let dueMs
 
-  if (deadline === 'thisWeek') {
+  if (deadline === 'today') {
+    const d = new Date()
+    d.setHours(23, 59, 59, 0)
+    dueMs = d.getTime()
+  } else if (deadline === 'tomorrow') {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    d.setHours(23, 59, 59, 0)
+    dueMs = d.getTime()
+  } else if (deadline === 'inAFewDays') {
+    const d = new Date()
+    d.setDate(d.getDate() + 3)
+    d.setHours(23, 59, 59, 0)
+    dueMs = d.getTime()
+  } else if (deadline === 'thisWeek') {
+    // backwards compat
     const d = new Date()
     d.setDate(d.getDate() + (7 - d.getDay()))
     d.setHours(23, 59, 59, 0)
     dueMs = d.getTime()
   } else if (deadline === 'thisMonth') {
+    // backwards compat
     const d = new Date()
     d.setMonth(d.getMonth() + 1, 0)
     d.setHours(23, 59, 59, 0)
