@@ -2,40 +2,30 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 export function useAuth() {
-  const [session, setSession] = useState(undefined) // undefined = still loading
+  const [user, setUser] = useState(undefined) // undefined = still loading
 
   useEffect(() => {
+    // Restore existing session, or create a persistent anonymous one
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+      if (session?.user) {
+        setUser(session.user)
+      } else {
+        supabase.auth.signInAnonymously().then(({ data, error }) => {
+          if (error) console.error('Anonymous sign-in failed:', error)
+          setUser(data?.user ?? null)
+        })
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
+      setUser(session?.user ?? null)
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
-  async function signIn(email, password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error
-  }
-
-  async function signUp(email, password) {
-    const { error } = await supabase.auth.signUp({ email, password })
-    return error
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut()
-  }
-
   return {
-    session,
-    loading: session === undefined,
-    user: session?.user ?? null,
-    signIn,
-    signUp,
-    signOut,
+    user,
+    loading: user === undefined,
   }
 }

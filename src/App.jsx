@@ -6,11 +6,10 @@ import TaskList from './components/TaskList'
 import TaskForm from './components/TaskForm'
 import DoMode from './components/DoMode'
 import CelebrationOverlay from './components/CelebrationOverlay'
-import LoginScreen from './components/LoginScreen'
 import './styles/global.css'
 
 export default function App() {
-  const { session, loading: authLoading, user, signIn, signUp, signOut } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const { tasks, addTask, completeTask, deleteTask, restoreTask } = useTasks(user?.id)
 
   const [view, setView]         = useState('home') // 'home' | 'list'
@@ -29,12 +28,6 @@ export default function App() {
     )
   }
 
-  // ── Not signed in ───────────────────────────────────────────────────────────
-  if (!session) {
-    return <LoginScreen onSignIn={signIn} onSignUp={signUp} />
-  }
-
-  // ── Signed in ───────────────────────────────────────────────────────────────
   function handleSave(data) {
     if (Array.isArray(data)) {
       data.forEach(task => addTask(task))
@@ -64,9 +57,6 @@ export default function App() {
       {/* Header */}
       <header className="app-header">
         <span className="app-logo">Trigger</span>
-        <button className="btn-signout" onClick={signOut} aria-label="Sign out">
-          Sign out
-        </button>
       </header>
 
       {/* Main content */}
