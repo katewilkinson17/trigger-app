@@ -4,8 +4,12 @@ const URGENCY_DOT = ['', '🟢', '🟡', '🔴']
 
 function formatDeadline(deadline) {
   if (!deadline) return null
-  if (deadline === 'thisWeek')  return '📅 This week'
-  if (deadline === 'thisMonth') return '📅 This month'
+  if (deadline === 'today')      return '📅 Today'
+  if (deadline === 'tomorrow')   return '📅 Tomorrow'
+  if (deadline === 'inAFewDays') return '📅 In a few days'
+  // backwards compat
+  if (deadline === 'thisWeek')   return '📅 This week'
+  if (deadline === 'thisMonth')  return '📅 This month'
   if (deadline?.date) {
     const d = new Date(deadline.date)
     return `📅 ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
@@ -18,7 +22,6 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
   const doneToday = tasks.filter(t => t.done)
 
   function handleComplete(id) {
-    if (navigator.vibrate) navigator.vibrate(50)
     onComplete(id)
   }
 

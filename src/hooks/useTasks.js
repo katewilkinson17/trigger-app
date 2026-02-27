@@ -1,66 +1,138 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
+import { priorityScore } from '../utils/taskUtils'
 
-const STORAGE_KEY = 'trigger_tasks'
-const HISTORY_KEY = 'trigger_history'
+// ── Shape mapping ─────────────────────────────────────────────────────────────
+// DB uses snake_case columns; the app keeps the same camelCase shape as before
+// so no other component changes are needed.
 
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+function dbToTask(row) {
+  return {
+    id:           row.id,
+    text:         row.title,
+    urgency:      row.urgency_score,
+    dread:        row.dread_score,
+    timeEstimate: row.time_estimate,
+    familiar:     row.is_familiar,
+    deadline:     row.deadline,          // jsonb — already parsed by Supabase client
+    done:         row.completed_at !== null,
+    createdAt:    new Date(row.created_at).getTime(),
+    completedAt:  row.completed_at ? new Date(row.completed_at).getTime() : null,
+  }
 }
 
-export function useTasks() {
-  const [tasks, setTasks] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const all = raw ? JSON.parse(raw) : []
+function taskToDb(task, userId) {
+  return {
+    user_id:        userId,
+    title:          task.text,
+    urgency_score:  task.urgency,
+    dread_score:    task.dread,
+    time_estimate:  task.timeEstimate,
+    is_familiar:    task.familiar ?? true,
+    deadline:       task.deadline ?? null,
+    priority_score: priorityScore(task),
+  }
+}
 
-      // Archive any done tasks completed before today into history log (daily reset)
-      const todayStr = new Date().toDateString()
-      const toArchive = all.filter(
-        t => t.done && (!t.completedAt || new Date(t.completedAt).toDateString() !== todayStr)
-      )
-      if (toArchive.length > 0) {
-        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-        localStorage.setItem(HISTORY_KEY, JSON.stringify([...history, ...toArchive]))
-        return all.filter(t => !toArchive.some(a => a.id === t.id))
-      }
-      return all
-    } catch {
-      return []
+function todayStartISO() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString()
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+export function useTasks(userId) {
+  const [tasks, setTasks]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const pendingIds            = useRef(new Set()) // temp IDs for in-flight optimistic rows
+  const tasksRef              = useRef(tasks)
+  tasksRef.current = tasks
+
+  async function fetchTasks() {
+    if (!userId) return
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      // Active tasks OR tasks completed today (replaces localStorage daily-reset logic)
+      .or(`completed_at.is.null,completed_at.gte.${todayStartISO()}`)
+      .order('created_at', { ascending: false })
+
+    if (!error && data) {
+      setTasks(prev => {
+        // Keep any in-flight optimistic rows; fill the rest from the server
+        const optimistic = prev.filter(t => pendingIds.current.has(t.id))
+        const fromServer = data.map(dbToTask).filter(t => !pendingIds.current.has(t.id))
+        return [...optimistic, ...fromServer]
+      })
     }
-  })
+    setLoading(false)
+  }
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
-  }, [tasks])
+    if (!userId) { setLoading(false); return }
 
-  function addTask({ text, urgency, dread, timeEstimate, familiar, deadline }) {
-    const task = {
-      id: generateId(),
-      text,
-      urgency,
-      dread,
-      timeEstimate,
-      familiar,
-      deadline: deadline ?? null,
-      done: false,
-      createdAt: Date.now(),
+    fetchTasks()
+
+    // Re-fetch when the tab regains focus for cross-device sync
+    function onVisible() {
+      if (document.visibilityState === 'visible') fetchTasks()
     }
-    setTasks(prev => [task, ...prev])
-    return task
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [userId])
+
+  // ── Mutations (optimistic-first) ────────────────────────────────────────────
+
+  async function addTask({ text, urgency, dread, timeEstimate, familiar, deadline }) {
+    const tempId = crypto.randomUUID()
+    const now    = Date.now()
+    const optimistic = {
+      id: tempId, text, urgency, dread, timeEstimate, familiar,
+      deadline: deadline ?? null,
+      done: false, createdAt: now, completedAt: null,
+    }
+    pendingIds.current.add(tempId)
+    setTasks(prev => [optimistic, ...prev])
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert(taskToDb(optimistic, userId))
+      .select()
+      .single()
+
+    pendingIds.current.delete(tempId)
+
+    if (!error && data) {
+      setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(data) : t))
+    } else {
+      // Rollback on failure
+      setTasks(prev => prev.filter(t => t.id !== tempId))
+    }
   }
 
-  function completeTask(id) {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: true, completedAt: Date.now() } : t))
+  async function completeTask(id) {
+    const now = new Date().toISOString()
+    setTasks(prev => prev.map(t =>
+      t.id === id ? { ...t, done: true, completedAt: Date.now() } : t
+    ))
+    const task = tasksRef.current.find(t => t.id === id)
+    await supabase
+      .from('tasks')
+      .update({ completed_at: now, priority_score: task ? priorityScore(task) : null })
+      .eq('id', id)
   }
 
-  function deleteTask(id) {
+  async function deleteTask(id) {
     setTasks(prev => prev.filter(t => t.id !== id))
+    await supabase.from('tasks').delete().eq('id', id)
   }
 
-  function restoreTask(id) {
-    // Clear completedAt so the task isn't immediately re-archived on next load
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: false, completedAt: null } : t))
+  async function restoreTask(id) {
+    setTasks(prev => prev.map(t =>
+      t.id === id ? { ...t, done: false, completedAt: null } : t
+    ))
+    await supabase.from('tasks').update({ completed_at: null }).eq('id', id)
   }
 
-  return { tasks, addTask, completeTask, deleteTask, restoreTask }
+  return { tasks, loading, addTask, completeTask, deleteTask, restoreTask }
 }

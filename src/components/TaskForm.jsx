@@ -1,11 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { TIME_ESTIMATES, TIME_ORDER, aiTimeEstimate } from '../utils/taskUtils'
-
-const URGENCY_OPTIONS = [
-  { value: 1, emoji: '🟢', label: 'Whenever' },
-  { value: 2, emoji: '🟡', label: 'Soon' },
-  { value: 3, emoji: '🔴', label: 'Today' },
-]
+import { TIME_ESTIMATES, TIME_ORDER, aiTimeEstimate, deriveUrgency } from '../utils/taskUtils'
 
 const DREAD_LABELS = [
   { max: 2,  label: 'No dread' },
@@ -45,19 +39,40 @@ function splitLocally(text) {
   return [text]
 }
 
-const RATING_STEPS = ['familiar', 'urgency', 'dread', 'time-suggest', 'deadline']
+async function compressImage(file) {
+  return new Promise(resolve => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const maxDim = 1024
+      let w = img.width, h = img.height
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim }
+        else { w = Math.round(w * maxDim / h); h = maxDim }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1])
+    }
+    img.src = url
+  })
+}
 
 export default function TaskForm({ onSave, onCancel }) {
-  const [step, setStep] = useState('text')
-  const [text, setText] = useState('')
+  const [step, setStep]           = useState('text')
+  const [text, setText]           = useState('')
   const [isRecording, setIsRecording] = useState(false)
+  const [isScanning, setIsScanning]   = useState(false)
 
-  // Per-task state (reset between tasks in split flow)
-  const [familiar, setFamiliar]           = useState(null)
-  const [urgency, setUrgency]             = useState(null)
-  const [dread, setDread]                 = useState(5)
-  const [timeEstimate, setTimeEstimate]   = useState(null)
-  const [deadline, setDeadline]           = useState(null)
+  // Per-task rate-screen state
+  const [familiar, setFamiliar]               = useState(null)
+  const [dread, setDread]                     = useState(5)
+  const [localEstimate, setLocalEstimate]     = useState(null)
+  const [deadline, setDeadline]               = useState(null)
+  const [deadlineExpanded, setDeadlineExpanded] = useState(false)
+  const [showDatePicker, setShowDatePicker]   = useState(false)
   const [deadlineDateVal, setDeadlineDateVal] = useState('')
 
   // Split flow
@@ -65,14 +80,29 @@ export default function TaskForm({ onSave, onCancel }) {
   const [splitIdx, setSplitIdx]     = useState(0)
   const [splitMeta, setSplitMeta]   = useState([])
 
-  const textRef = useRef(null)
+  const textRef            = useRef(null)
+  const fileRef            = useRef(null)
+  const estimateAdjusted   = useRef(false)
 
-  const isSplit    = splitQueue.length > 1
+  const isSplit     = splitQueue.length > 1
   const currentText = isSplit ? splitQueue[splitIdx] : text.trim()
 
   useEffect(() => {
     if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
+
+  // ── Shared rate-screen entry helper ────────────────────────────────
+  function enterRate(taskText) {
+    setFamiliar(null)
+    setDread(5)
+    setLocalEstimate(aiTimeEstimate(taskText, true))
+    setDeadline(null)
+    setDeadlineExpanded(false)
+    setShowDatePicker(false)
+    setDeadlineDateVal('')
+    estimateAdjusted.current = false
+    setStep('rate')
+  }
 
   // ── Text step ──────────────────────────────────────────────────────
   function handleTextSubmit(e) {
@@ -81,7 +111,7 @@ export default function TaskForm({ onSave, onCancel }) {
     if (mightBeMultiple(text.trim())) {
       setStep('split-prompt')
     } else {
-      setStep('familiar')
+      enterRate(text.trim())
     }
   }
 
@@ -92,75 +122,70 @@ export default function TaskForm({ onSave, onCancel }) {
       setSplitQueue(parts)
       setStep('split-review')
     } else {
-      setStep('familiar')
+      enterRate(text.trim())
     }
   }
 
   function startSplitFlow() {
     setSplitIdx(0)
     setSplitMeta([])
-    resetPerTask()
-    setStep('familiar')
+    enterRate(splitQueue[0])
   }
 
   function keepAsOne() {
     setSplitQueue([])
     setSplitIdx(0)
     setSplitMeta([])
-    resetPerTask()
-    setStep('familiar')
+    enterRate(text.trim())
   }
 
-  function resetPerTask() {
-    setFamiliar(null)
-    setUrgency(null)
-    setDread(5)
-    setDeadline(null)
-    setDeadlineDateVal('')
-    setTimeEstimate(null)
-  }
-
-  // ── Per-task rating steps ──────────────────────────────────────────
-  function handleFamiliar(val) {
+  // ── Rate screen interactions ───────────────────────────────────────
+  function handleFamiliarChange(val) {
     setFamiliar(val)
-    setTimeEstimate(aiTimeEstimate(currentText, val))
-    setStep('urgency')
+    if (!estimateAdjusted.current) {
+      setLocalEstimate(aiTimeEstimate(currentText, val))
+    }
   }
 
-  function handleUrgency(val) {
-    setUrgency(val)
-    setStep('dread')
+  function adjustEstimate(dir) {
+    estimateAdjusted.current = true
+    const idx = TIME_ORDER.indexOf(localEstimate)
+    if (dir === 'quicker') setLocalEstimate(TIME_ORDER[Math.max(0, idx - 1)])
+    else setLocalEstimate(TIME_ORDER[Math.min(3, idx + 1)])
   }
 
-  function handleDreadNext() {
-    setStep('time-suggest')
+  function handleDeadlineChoice(val) {
+    setDeadline(val)
+    setShowDatePicker(false)
+    if (val !== null) setDeadlineExpanded(false)
   }
 
-  function handleTimeSuggest(dir) {
-    const idx      = TIME_ORDER.indexOf(timeEstimate)
-    const finalIdx = dir === 'quicker'
-      ? Math.max(0, idx - 1)
-      : dir === 'longer'
-        ? Math.min(3, idx + 1)
-        : idx
-    setTimeEstimate(TIME_ORDER[finalIdx])
-    setStep('deadline')
-  }
+  // ── Save ───────────────────────────────────────────────────────────
+  function handleSave() {
+    const urgency      = deriveUrgency(deadline)
+    const finalEstimate = localEstimate ?? aiTimeEstimate(currentText, familiar ?? true)
+    const meta = { urgency, dread, timeEstimate: finalEstimate, familiar: familiar ?? true, deadline }
 
-  function handleDeadline(val) {
-    const meta = { urgency, dread, timeEstimate, familiar, deadline: val }
     if (isSplit) {
       const newMeta = [...splitMeta, meta]
-      if (splitIdx + 1 < splitQueue.length) {
+      const nextIdx = splitIdx + 1
+      if (nextIdx < splitQueue.length) {
         setSplitMeta(newMeta)
-        setSplitIdx(splitIdx + 1)
-        resetPerTask()
-        setStep('familiar')
+        setSplitIdx(nextIdx)
+        // Reset for next task and set new estimate inline (no step change)
+        setFamiliar(null)
+        setDread(5)
+        setLocalEstimate(aiTimeEstimate(splitQueue[nextIdx], true))
+        setDeadline(null)
+        setDeadlineExpanded(false)
+        setShowDatePicker(false)
+        setDeadlineDateVal('')
+        estimateAdjusted.current = false
       } else {
         onSave(splitQueue.map((t, i) => ({ text: t, ...newMeta[i] })))
       }
     } else {
-      onSave({ text: text.trim(), urgency, dread, timeEstimate, familiar, deadline: val })
+      onSave({ text: text.trim(), ...meta })
     }
   }
 
@@ -177,49 +202,92 @@ export default function TaskForm({ onSave, onCancel }) {
     recognition.onstart  = () => setIsRecording(true)
     recognition.onend    = () => setIsRecording(false)
     recognition.onerror  = () => setIsRecording(false)
-    recognition.onresult = e  => { setText(e.results[0][0].transcript); setIsRecording(false) }
+    recognition.onresult = e => { setText(e.results[0][0].transcript); setIsRecording(false) }
     recognition.start()
   }
 
-  // ── Rendering helpers ──────────────────────────────────────────────
-  const activeDot   = step === 'deadline-date' ? 'deadline' : step
-  const showDots    = RATING_STEPS.includes(activeDot)
-  const timeLabel   = TIME_ESTIMATES.find(t => t.value === timeEstimate)?.label ?? ''
-  const dreadColor  = getDreadColor(dread)
-  const trackStyle  = {
-    background: `linear-gradient(to right, ${dreadColor} ${dread * 10}%, #E8E4DF ${dread * 10}%)`
+  // ── Photo capture ──────────────────────────────────────────────────
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setIsScanning(true)
+    try {
+      const base64 = await compressImage(file)
+      const res = await fetch('/api/scan-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 }),
+      })
+      if (!res.ok) throw new Error('scan failed')
+      const data = await res.json()
+      if (data.task) setText(data.task)
+      if (data.deadline) {
+        setDeadlineDateVal(data.deadline)
+        setDeadline({ date: data.deadline })
+        setDeadlineExpanded(true)
+      }
+    } catch {
+      // silently ignore — user keeps existing text
+    } finally {
+      setIsScanning(false)
+    }
   }
 
-  function SplitBadge() {
-    if (!isSplit) return null
-    return (
-      <p className="form-hint">
-        <span className="split-progress-badge">{splitIdx + 1}/{splitQueue.length}</span>
-        <strong>{currentText}</strong>
-      </p>
-    )
+  // ── Derived display values ─────────────────────────────────────────
+  const timeLabel  = TIME_ESTIMATES.find(t => t.value === localEstimate)?.label ?? ''
+  const dreadColor = getDreadColor(dread)
+  const trackStyle = {
+    background: `linear-gradient(to right, ${dreadColor} ${dread * 10}%, #E8E4DF ${dread * 10}%)`
   }
+  const deadlineLabel = deadline === 'today'      ? 'Today'
+    : deadline === 'tomorrow'    ? 'Tomorrow'
+    : deadline === 'inAFewDays'  ? 'In a few days'
+    : deadline?.date
+      ? new Date(deadline.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null
+
+  const isNextTask = isSplit && splitIdx + 1 < splitQueue.length
 
   return (
     <div className="form-overlay">
       <div className="form-card">
 
-        {/* ── Text entry ── */}
+        {/* ── Screen 1: Text entry ── */}
         {step === 'text' && (
           <>
             <p className="form-label">What's on your mind?</p>
             <form onSubmit={handleTextSubmit}>
-              <textarea
-                ref={textRef}
-                className="task-input"
-                value={text}
-                onChange={e => setText(e.target.value)}
-                placeholder="Type it out, or tap the mic below…"
-                rows={3}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(e) }
-                }}
+              <div className="text-input-wrap">
+                <textarea
+                  ref={textRef}
+                  className="task-input"
+                  value={text}
+                  onChange={e => setText(e.target.value)}
+                  placeholder="Type it out, or tap the mic…"
+                  rows={3}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(e) }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="camera-btn"
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Scan from photo"
+                  disabled={isScanning}
+                >
+                  {isScanning ? '⏳' : '📷'}
+                </button>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
               />
+              {isScanning && <p className="scanning-hint">Scanning image…</p>}
               <div className="voice-section">
                 <button
                   type="button"
@@ -233,7 +301,7 @@ export default function TaskForm({ onSave, onCancel }) {
               </div>
               <div className="form-actions">
                 <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={!text.trim()}>Next →</button>
+                <button type="submit" className="btn-primary" disabled={!text.trim() || isScanning}>Next →</button>
               </div>
             </form>
           </>
@@ -265,49 +333,18 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
-        {/* ── Familiar ── */}
-        {step === 'familiar' && (
+        {/* ── Screen 2: Rate screen (one per task) ── */}
+        {step === 'rate' && (
           <>
-            <SplitBadge />
-            <p className="form-label">Have you done this before?</p>
-            <div className="familiar-row">
-              <button className="familiar-btn familiar-yes" onClick={() => handleFamiliar(true)}>
-                <span className="familiar-icon">✅</span>
-                <span className="familiar-label">Done it before</span>
-              </button>
-              <button className="familiar-btn familiar-no" onClick={() => handleFamiliar(false)}>
-                <span className="familiar-icon">✨</span>
-                <span className="familiar-label">First time!</span>
-              </button>
-            </div>
-          </>
-        )}
+            {isSplit && (
+              <p className="form-hint rate-task-hint">
+                <span className="split-progress-badge">{splitIdx + 1}/{splitQueue.length}</span>
+                <strong>{currentText}</strong>
+              </p>
+            )}
 
-        {/* ── Urgency ── */}
-        {step === 'urgency' && (
-          <>
-            <SplitBadge />
-            <p className="form-label">How urgent is this?</p>
-            <div className="rating-row">
-              {URGENCY_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  className={`rating-btn rating-urgency-${opt.value}`}
-                  onClick={() => handleUrgency(opt.value)}
-                >
-                  <span className="rating-emoji">{opt.emoji}</span>
-                  <span className="rating-sub">{opt.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ── Dread slider (SUDS 0–10) ── */}
-        {step === 'dread' && (
-          <>
-            <SplitBadge />
-            <p className="form-label">How much are you dreading this?</p>
+            {/* Dread slider */}
+            <p className="rate-question">How much are you dreading this?</p>
             <div className="suds-wrap">
               <div className="suds-value" style={{ color: dreadColor }}>{dread}</div>
               <div className="suds-value-label">{getDreadLabel(dread)}</div>
@@ -325,93 +362,101 @@ export default function TaskForm({ onSave, onCancel }) {
                 <span>Really dreading this</span>
               </div>
             </div>
-            <button className="btn-primary" onClick={handleDreadNext}>Next →</button>
-          </>
-        )}
 
-        {/* ── AI time suggestion ── */}
-        {step === 'time-suggest' && (
-          <>
-            <SplitBadge />
+            {/* Familiar inline pills */}
+            <div className="familiar-inline-row">
+              <span className="familiar-inline-label">Done this before?</span>
+              <div className="familiar-pills">
+                <button
+                  className={`familiar-pill${familiar === true ? ' active' : ''}`}
+                  onClick={() => handleFamiliarChange(true)}
+                >Yes</button>
+                <button
+                  className={`familiar-pill${familiar === false ? ' active' : ''}`}
+                  onClick={() => handleFamiliarChange(false)}
+                >Nope</button>
+              </div>
+            </div>
             {familiar === false && (
               <p className="novel-task-warning">
-                💡 Heads up — new tasks often take longer than expected.
+                💡 New tasks often take longer than expected.
               </p>
             )}
-            <p className="form-label">
-              I'm thinking <strong>{timeLabel}</strong> — sound right?
-            </p>
-            <div className="time-adjust-row">
-              <button
-                className="time-adjust-btn"
-                onClick={() => handleTimeSuggest('quicker')}
-                disabled={TIME_ORDER.indexOf(timeEstimate) === 0}
-              >
-                ← Quicker
-              </button>
-              <button
-                className="time-adjust-btn time-adjust-btn-main"
-                onClick={() => handleTimeSuggest('same')}
-              >
-                About right ✓
-              </button>
-              <button
-                className="time-adjust-btn"
-                onClick={() => handleTimeSuggest('longer')}
-                disabled={TIME_ORDER.indexOf(timeEstimate) === 3}
-              >
-                Longer →
-              </button>
-            </div>
-          </>
-        )}
 
-        {/* ── Deadline ── */}
-        {step === 'deadline' && (
-          <>
-            <SplitBadge />
-            <p className="form-label">Does this have a deadline?</p>
-            <p className="form-hint">Optional — skip if not relevant.</p>
-            <div className="deadline-grid">
-              <button className="deadline-btn" onClick={() => handleDeadline('thisWeek')}>This week</button>
-              <button className="deadline-btn" onClick={() => handleDeadline('thisMonth')}>This month</button>
-              <button className="deadline-btn" onClick={() => setStep('deadline-date')}>Pick a date</button>
-              <button className="deadline-btn deadline-btn-skip" onClick={() => handleDeadline(null)}>No deadline</button>
-            </div>
-          </>
-        )}
-
-        {/* ── Deadline date picker ── */}
-        {step === 'deadline-date' && (
-          <>
-            <p className="form-label">When is it due?</p>
-            <input
-              type="date"
-              className="deadline-date-input"
-              value={deadlineDateVal}
-              min={new Date().toISOString().split('T')[0]}
-              onChange={e => setDeadlineDateVal(e.target.value)}
-            />
-            <div className="form-actions">
-              <button className="btn-ghost" onClick={() => handleDeadline(null)}>Skip</button>
+            {/* Time estimate adjuster */}
+            <div className="time-inline-row">
               <button
-                className="btn-primary"
-                disabled={!deadlineDateVal}
-                onClick={() => handleDeadline({ date: deadlineDateVal })}
-              >
-                Set deadline
-              </button>
+                className="time-inline-adj"
+                onClick={() => adjustEstimate('quicker')}
+                disabled={TIME_ORDER.indexOf(localEstimate) === 0}
+                aria-label="Quicker"
+              >← Quicker</button>
+              <span className="time-inline-label">{timeLabel}</span>
+              <button
+                className="time-inline-adj"
+                onClick={() => adjustEstimate('longer')}
+                disabled={TIME_ORDER.indexOf(localEstimate) === 3}
+                aria-label="Longer"
+              >Longer →</button>
             </div>
-          </>
-        )}
 
-        {/* Step dots */}
-        {showDots && (
-          <div className="step-dots">
-            {RATING_STEPS.map(s => (
-              <span key={s} className={`dot${s === activeDot ? ' active' : ''}`} />
-            ))}
-          </div>
+            {/* Collapsible deadline */}
+            {!deadlineExpanded ? (
+              <button
+                className={`deadline-expand-btn${deadlineLabel ? ' has-value' : ''}`}
+                onClick={() => setDeadlineExpanded(true)}
+              >
+                {deadlineLabel ? `📅 ${deadlineLabel} ▾` : '+ Add deadline'}
+              </button>
+            ) : (
+              <div className="deadline-inline-wrap">
+                <div className="deadline-inline-grid">
+                  {[
+                    { val: 'today',      label: 'Today' },
+                    { val: 'tomorrow',   label: 'Tomorrow' },
+                    { val: 'inAFewDays', label: 'In a few days' },
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      className={`deadline-inline-btn${deadline === opt.val ? ' active' : ''}`}
+                      onClick={() => handleDeadlineChoice(opt.val)}
+                    >{opt.label}</button>
+                  ))}
+                  <button
+                    className={`deadline-inline-btn${deadline?.date ? ' active' : ''}`}
+                    onClick={() => setShowDatePicker(p => !p)}
+                  >Pick a date</button>
+                  <button
+                    className={`deadline-inline-btn deadline-inline-skip${!deadline && !showDatePicker ? ' active' : ''}`}
+                    onClick={() => handleDeadlineChoice(null)}
+                  >No rush</button>
+                </div>
+                {showDatePicker && (
+                  <input
+                    type="date"
+                    className="deadline-date-input"
+                    value={deadlineDateVal}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => {
+                      setDeadlineDateVal(e.target.value)
+                      if (e.target.value) {
+                        setDeadline({ date: e.target.value })
+                        setDeadlineExpanded(false)
+                        setShowDatePicker(false)
+                      }
+                    }}
+                  />
+                )}
+              </div>
+            )}
+
+            <button
+              className="btn-rate-save"
+              onClick={handleSave}
+            >
+              {isNextTask ? 'Save & next →' : 'Save task ✓'}
+            </button>
+          </>
         )}
 
       </div>

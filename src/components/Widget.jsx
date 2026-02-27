@@ -74,7 +74,7 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
                       </button>
                       <button
                         className="btn-done"
-                        onClick={() => { if (navigator.vibrate) navigator.vibrate(50); onComplete(task.id) }}
+                        onClick={() => onComplete(task.id)}
                         aria-label="Mark done"
                       >
                         ✓
