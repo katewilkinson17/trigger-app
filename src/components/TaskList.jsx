@@ -7,7 +7,6 @@ function formatDeadline(deadline) {
   if (deadline === 'today')      return '📅 Today'
   if (deadline === 'tomorrow')   return '📅 Tomorrow'
   if (deadline === 'inAFewDays') return '📅 In a few days'
-  // backwards compat
   if (deadline === 'thisWeek')   return '📅 This week'
   if (deadline === 'thisMonth')  return '📅 This month'
   if (deadline?.date) {
@@ -17,13 +16,9 @@ function formatDeadline(deadline) {
   return null
 }
 
-export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
+export default function TaskList({ tasks, onComplete, onDelete, onRestore, onViewPhoto }) {
   const active    = tasks.filter(t => !t.done).sort((a, b) => priorityScore(b) - priorityScore(a))
   const doneToday = tasks.filter(t => t.done)
-
-  function handleComplete(id) {
-    onComplete(id)
-  }
 
   return (
     <section className="task-list-view">
@@ -42,8 +37,9 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
             <TaskRow
               key={task.id}
               task={task}
-              onComplete={handleComplete}
+              onComplete={onComplete}
               onDelete={onDelete}
+              onViewPhoto={onViewPhoto}
             />
           ))}
         </ul>
@@ -60,6 +56,7 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
                 isDone
                 onRestore={onRestore}
                 onDelete={onDelete}
+                onViewPhoto={onViewPhoto}
               />
             ))}
           </ul>
@@ -69,7 +66,7 @@ export default function TaskList({ tasks, onComplete, onDelete, onRestore }) {
   )
 }
 
-function TaskRow({ task, isDone, onComplete, onDelete, onRestore }) {
+function TaskRow({ task, isDone, onComplete, onDelete, onRestore, onViewPhoto }) {
   const dreadVal      = task.dread != null ? task.dread : null
   const deadlineLabel = formatDeadline(task.deadline)
 
@@ -85,9 +82,27 @@ function TaskRow({ task, isDone, onComplete, onDelete, onRestore }) {
             <span className="task-time-badge">{getTimeEstimateShort(task.timeEstimate)}</span>
             {dreadVal != null && <span className="task-meta-badge">Dread: {dreadVal}</span>}
             {deadlineLabel && <span className="task-meta-badge task-deadline-badge">{deadlineLabel}</span>}
+            {task.locationTag && (
+              <span className="task-meta-badge task-location-badge">📍 {task.locationTag}</span>
+            )}
+            {task.recurrenceRule && (
+              <span className="task-meta-badge task-recurring-tag">🔄 Recurring</span>
+            )}
           </div>
         </div>
+
+        {/* Photo thumbnail — tap to view full screen (Feature 1) */}
+        {task.photoUrl && (
+          <button
+            className="task-photo-thumb-btn"
+            onClick={() => onViewPhoto?.(task.photoUrl)}
+            aria-label="View attached bill photo"
+          >
+            <img src={task.photoUrl} alt="Bill" className="task-photo-thumb" />
+          </button>
+        )}
       </div>
+
       <div className="full-task-actions">
         {isDone ? (
           <button className="btn-undo-sm" onClick={() => onRestore(task.id)}>Undo</button>

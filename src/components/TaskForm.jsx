@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { TIME_ESTIMATES, TIME_ORDER, aiTimeEstimate, deriveUrgency } from '../utils/taskUtils'
+import { supabase } from '../lib/supabase'
+import { TIME_ESTIMATES, TIME_ORDER, aiTimeEstimate, deriveUrgency,
+         mightRecur, detectErrandLocation } from '../utils/taskUtils'
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const DREAD_LABELS = [
   { max: 2,  label: 'No dread' },
@@ -8,6 +12,23 @@ const DREAD_LABELS = [
   { max: 8,  label: 'A lot' },
   { max: 10, label: 'Dreading it' },
 ]
+
+const PRESET_LOCATIONS = [
+  { name: 'Grocery store', icon: '🛒' },
+  { name: 'Pharmacy',      icon: '💊' },
+  { name: 'Online',        icon: '🌐' },
+  { name: 'Home',          icon: '🏠' },
+  { name: 'Work',          icon: '💼' },
+]
+
+const RECURRENCE_OPTIONS = [
+  { label: 'Weekly',        rule: type => ({ type: 'weekly',   dayOfWeek:  new Date().getDay() || 1 }) },
+  { label: 'Every 2 weeks', rule: ()   => ({ type: 'biweekly' }) },
+  { label: 'Monthly',       rule: ()   => ({ type: 'monthly',  dayOfMonth: new Date().getDate() }) },
+  { label: 'No',            rule: ()   => null },
+]
+
+// ── Pure helpers ──────────────────────────────────────────────────────────────
 
 function getDreadLabel(val) {
   return DREAD_LABELS.find(d => val <= d.max)?.label ?? 'Dreading it'
@@ -60,19 +81,25 @@ async function compressImage(file) {
   })
 }
 
-export default function TaskForm({ onSave, onCancel }) {
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function TaskForm({ userId, onSave, onCancel }) {
+  // Core text & scanning
   const [step, setStep]           = useState('text')
   const [text, setText]           = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const [isScanning, setIsScanning]   = useState(false)
 
+  // Photo
+  const [photoUrl, setPhotoUrl]   = useState(null)
+
   // Per-task rate-screen state
-  const [familiar, setFamiliar]               = useState(null)
-  const [dread, setDread]                     = useState(5)
-  const [localEstimate, setLocalEstimate]     = useState(null)
-  const [deadline, setDeadline]               = useState(null)
+  const [familiar, setFamiliar]             = useState(null)
+  const [dread, setDread]                   = useState(5)
+  const [localEstimate, setLocalEstimate]   = useState(null)
+  const [deadline, setDeadline]             = useState(null)
   const [deadlineExpanded, setDeadlineExpanded] = useState(false)
-  const [showDatePicker, setShowDatePicker]   = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
   const [deadlineDateVal, setDeadlineDateVal] = useState('')
 
   // Split flow
@@ -80,9 +107,22 @@ export default function TaskForm({ onSave, onCancel }) {
   const [splitIdx, setSplitIdx]     = useState(0)
   const [splitMeta, setSplitMeta]   = useState([])
 
-  const textRef            = useRef(null)
-  const fileRef            = useRef(null)
-  const estimateAdjusted   = useRef(false)
+  // Errand intelligence (Feature 4)
+  const [suggestedLocation, setSuggestedLocation] = useState(null)
+  const [errandAccepted, setErrandAccepted]       = useState(false)
+
+  // Location step (Feature 2)
+  const [locationTag, setLocationTag]         = useState(null)
+  const [savedLocations, setSavedLocations]   = useState([])
+  const [showCustomLoc, setShowCustomLoc]     = useState(false)
+  const [customLocInput, setCustomLocInput]   = useState('')
+
+  // Single-task meta snapshot (for location/recurrence steps)
+  const [currentTaskMeta, setCurrentTaskMeta] = useState(null)
+
+  const textRef          = useRef(null)
+  const fileRef          = useRef(null)
+  const estimateAdjusted = useRef(false)
 
   const isSplit     = splitQueue.length > 1
   const currentText = isSplit ? splitQueue[splitIdx] : text.trim()
@@ -91,7 +131,36 @@ export default function TaskForm({ onSave, onCancel }) {
     if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
 
-  // ── Shared rate-screen entry helper ────────────────────────────────
+  // Load saved custom locations when entering location step
+  useEffect(() => {
+    if (step !== 'location' || !userId) return
+    supabase
+      .from('locations')
+      .select('*')
+      .eq('user_id', userId)
+      .then(({ data }) => { if (data) setSavedLocations(data) })
+  }, [step, userId])
+
+  // ── Photo upload ────────────────────────────────────────────────────────────
+
+  async function uploadPhoto(file) {
+    if (!userId || !file) return null
+    try {
+      const ext  = file.type.includes('png') ? 'png' : 'jpg'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const { error } = await supabase.storage
+        .from('task-photos')
+        .upload(path, file, { contentType: file.type })
+      if (error) return null
+      const { data } = supabase.storage.from('task-photos').getPublicUrl(path)
+      return data.publicUrl
+    } catch {
+      return null
+    }
+  }
+
+  // ── Rate-screen entry helper ────────────────────────────────────────────────
+
   function enterRate(taskText) {
     setFamiliar(null)
     setDread(5)
@@ -104,7 +173,8 @@ export default function TaskForm({ onSave, onCancel }) {
     setStep('rate')
   }
 
-  // ── Text step ──────────────────────────────────────────────────────
+  // ── Text step ──────────────────────────────────────────────────────────────
+
   function handleTextSubmit(e) {
     e.preventDefault()
     if (!text.trim()) return
@@ -115,11 +185,15 @@ export default function TaskForm({ onSave, onCancel }) {
     }
   }
 
-  // ── Split flow ─────────────────────────────────────────────────────
+  // ── Split flow ─────────────────────────────────────────────────────────────
+
   function handleSplitYes() {
     const parts = splitLocally(text.trim())
     if (parts.length > 1) {
       setSplitQueue(parts)
+      // Feature 4: check if all tasks suggest the same errand location
+      const suggestion = detectErrandLocation(parts)
+      if (suggestion) setSuggestedLocation(suggestion)
       setStep('split-review')
     } else {
       enterRate(text.trim())
@@ -136,10 +210,19 @@ export default function TaskForm({ onSave, onCancel }) {
     setSplitQueue([])
     setSplitIdx(0)
     setSplitMeta([])
+    setSuggestedLocation(null)
+    setErrandAccepted(false)
     enterRate(text.trim())
   }
 
-  // ── Rate screen interactions ───────────────────────────────────────
+  function handleErrandYes() {
+    setLocationTag(suggestedLocation)
+    setErrandAccepted(true)
+    setSuggestedLocation(null)
+  }
+
+  // ── Rate screen ────────────────────────────────────────────────────────────
+
   function handleFamiliarChange(val) {
     setFamiliar(val)
     if (!estimateAdjusted.current) {
@@ -160,9 +243,10 @@ export default function TaskForm({ onSave, onCancel }) {
     if (val !== null) setDeadlineExpanded(false)
   }
 
-  // ── Save ───────────────────────────────────────────────────────────
+  // ── Rate save → location step ──────────────────────────────────────────────
+
   function handleSave() {
-    const urgency      = deriveUrgency(deadline)
+    const urgency       = deriveUrgency(deadline)
     const finalEstimate = localEstimate ?? aiTimeEstimate(currentText, familiar ?? true)
     const meta = { urgency, dread, timeEstimate: finalEstimate, familiar: familiar ?? true, deadline }
 
@@ -170,9 +254,9 @@ export default function TaskForm({ onSave, onCancel }) {
       const newMeta = [...splitMeta, meta]
       const nextIdx = splitIdx + 1
       if (nextIdx < splitQueue.length) {
+        // More tasks to rate
         setSplitMeta(newMeta)
         setSplitIdx(nextIdx)
-        // Reset for next task and set new estimate inline (no step change)
         setFamiliar(null)
         setDread(5)
         setLocalEstimate(aiTimeEstimate(splitQueue[nextIdx], true))
@@ -181,15 +265,76 @@ export default function TaskForm({ onSave, onCancel }) {
         setShowDatePicker(false)
         setDeadlineDateVal('')
         estimateAdjusted.current = false
+        // stay on 'rate'
       } else {
-        onSave(splitQueue.map((t, i) => ({ text: t, ...newMeta[i] })))
+        // All tasks rated → go to location
+        setSplitMeta(newMeta)
+        setStep('location')
       }
     } else {
-      onSave({ text: text.trim(), ...meta })
+      // Single task → store meta and go to location
+      setCurrentTaskMeta(meta)
+      setStep('location')
     }
   }
 
-  // ── Voice input ────────────────────────────────────────────────────
+  // ── Location step ──────────────────────────────────────────────────────────
+
+  async function handleAddCustomLocation() {
+    const name = customLocInput.trim()
+    if (!name) return
+    if (userId) {
+      const { data } = await supabase
+        .from('locations')
+        .insert({ user_id: userId, name, category: 'other' })
+        .select()
+        .single()
+      if (data) setSavedLocations(prev => [...prev, data])
+    }
+    setLocationTag(name)
+    setCustomLocInput('')
+    setShowCustomLoc(false)
+  }
+
+  function handleLocationSave() {
+    // For single non-split tasks, check if recurrence step is needed
+    if (!isSplit && currentTaskMeta && mightRecur(text.trim())) {
+      setStep('recurrence')
+      return
+    }
+    callOnSave(null)
+  }
+
+  // ── Recurrence step ────────────────────────────────────────────────────────
+
+  function handleRecurrencePick(rule) {
+    callOnSave(rule)
+  }
+
+  // ── Final save ─────────────────────────────────────────────────────────────
+
+  // rule: recurrence rule (only for single tasks) or null
+  function callOnSave(recurrenceRule) {
+    if (isSplit) {
+      onSave(splitQueue.map((t, i) => ({
+        text:        t,
+        ...splitMeta[i],
+        photoUrl:    photoUrl    ?? null,
+        locationTag: locationTag ?? null,
+      })))
+    } else {
+      onSave({
+        text:           text.trim(),
+        ...currentTaskMeta,
+        photoUrl:       photoUrl        ?? null,
+        locationTag:    locationTag     ?? null,
+        recurrenceRule: recurrenceRule  ?? null,
+      })
+    }
+  }
+
+  // ── Voice input ────────────────────────────────────────────────────────────
+
   function handleVoice() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       alert('Voice input is not supported in this browser.')
@@ -206,14 +351,21 @@ export default function TaskForm({ onSave, onCancel }) {
     recognition.start()
   }
 
-  // ── Photo capture ──────────────────────────────────────────────────
+  // ── Photo capture ──────────────────────────────────────────────────────────
+
   async function handleFileChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
     setIsScanning(true)
     try {
-      const base64 = await compressImage(file)
+      // Upload original to storage + compress for Claude in parallel
+      const [uploadedUrl, base64] = await Promise.all([
+        uploadPhoto(file),
+        compressImage(file),
+      ])
+      if (uploadedUrl) setPhotoUrl(uploadedUrl)
+
       const res = await fetch('/api/scan-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -234,20 +386,23 @@ export default function TaskForm({ onSave, onCancel }) {
     }
   }
 
-  // ── Derived display values ─────────────────────────────────────────
+  // ── Derived display values ─────────────────────────────────────────────────
+
   const timeLabel  = TIME_ESTIMATES.find(t => t.value === localEstimate)?.label ?? ''
   const dreadColor = getDreadColor(dread)
   const trackStyle = {
     background: `linear-gradient(to right, ${dreadColor} ${dread * 10}%, #E8E4DF ${dread * 10}%)`
   }
-  const deadlineLabel = deadline === 'today'      ? 'Today'
-    : deadline === 'tomorrow'    ? 'Tomorrow'
-    : deadline === 'inAFewDays'  ? 'In a few days'
+  const deadlineLabel = deadline === 'today'     ? 'Today'
+    : deadline === 'tomorrow'   ? 'Tomorrow'
+    : deadline === 'inAFewDays' ? 'In a few days'
     : deadline?.date
       ? new Date(deadline.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : null
 
   const isNextTask = isSplit && splitIdx + 1 < splitQueue.length
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="form-overlay">
@@ -272,12 +427,12 @@ export default function TaskForm({ onSave, onCancel }) {
                 />
                 <button
                   type="button"
-                  className="camera-btn"
+                  className={`camera-btn${photoUrl ? ' camera-has-photo' : ''}`}
                   onClick={() => fileRef.current?.click()}
                   aria-label="Scan from photo"
                   disabled={isScanning}
                 >
-                  {isScanning ? '⏳' : '📷'}
+                  {isScanning ? '⏳' : photoUrl ? '📎' : '📷'}
                 </button>
               </div>
               <input
@@ -288,6 +443,11 @@ export default function TaskForm({ onSave, onCancel }) {
                 onChange={handleFileChange}
               />
               {isScanning && <p className="scanning-hint">Scanning image…</p>}
+              {photoUrl && !isScanning && (
+                <p className="scanning-hint" style={{ color: 'var(--green)' }}>
+                  Photo attached ✓
+                </p>
+              )}
               <div className="voice-section">
                 <button
                   type="button"
@@ -326,6 +486,29 @@ export default function TaskForm({ onSave, onCancel }) {
             <ul className="split-task-list">
               {splitQueue.map((t, i) => <li key={i} className="split-task-item">{t}</li>)}
             </ul>
+
+            {/* Feature 4: errand intelligence banner */}
+            {suggestedLocation && !errandAccepted && (
+              <div className="errand-suggest-banner">
+                <p className="errand-suggest-text">
+                  🛒 These all sound like <strong>{suggestedLocation}</strong> items — want to do them as one errand?
+                </p>
+                <div className="errand-suggest-actions">
+                  <button className="btn-errand-yes" onClick={handleErrandYes}>
+                    Yes, group them
+                  </button>
+                  <button className="btn-errand-no" onClick={() => setSuggestedLocation(null)}>
+                    No
+                  </button>
+                </div>
+              </div>
+            )}
+            {errandAccepted && (
+              <p className="errand-accepted-note">
+                📍 Grouped under <strong>{locationTag}</strong>
+              </p>
+            )}
+
             <div className="form-actions">
               <button className="btn-ghost" onClick={keepAsOne}>Keep as one</button>
               <button className="btn-primary" onClick={startSplitFlow}>Rate each →</button>
@@ -333,7 +516,7 @@ export default function TaskForm({ onSave, onCancel }) {
           </>
         )}
 
-        {/* ── Screen 2: Rate screen (one per task) ── */}
+        {/* ── Rate screen (one per task) ── */}
         {step === 'rate' && (
           <>
             {isSplit && (
@@ -343,7 +526,6 @@ export default function TaskForm({ onSave, onCancel }) {
               </p>
             )}
 
-            {/* Dread slider */}
             <p className="rate-question">How much are you dreading this?</p>
             <div className="suds-wrap">
               <div className="suds-value" style={{ color: dreadColor }}>{dread}</div>
@@ -363,7 +545,6 @@ export default function TaskForm({ onSave, onCancel }) {
               </div>
             </div>
 
-            {/* Familiar inline pills */}
             <div className="familiar-inline-row">
               <span className="familiar-inline-label">Done this before?</span>
               <div className="familiar-pills">
@@ -383,7 +564,6 @@ export default function TaskForm({ onSave, onCancel }) {
               </p>
             )}
 
-            {/* Time estimate adjuster */}
             <div className="time-inline-row">
               <button
                 className="time-inline-adj"
@@ -400,7 +580,6 @@ export default function TaskForm({ onSave, onCancel }) {
               >Longer →</button>
             </div>
 
-            {/* Collapsible deadline */}
             {!deadlineExpanded ? (
               <button
                 className={`deadline-expand-btn${deadlineLabel ? ' has-value' : ''}`}
@@ -450,12 +629,93 @@ export default function TaskForm({ onSave, onCancel }) {
               </div>
             )}
 
-            <button
-              className="btn-rate-save"
-              onClick={handleSave}
-            >
-              {isNextTask ? 'Save & next →' : 'Save task ✓'}
+            <button className="btn-rate-save" onClick={handleSave}>
+              {isNextTask ? 'Save & next →' : 'Next →'}
             </button>
+          </>
+        )}
+
+        {/* ── Location step (Feature 2) ── */}
+        {step === 'location' && (
+          <>
+            <p className="form-label">Where would you do this?</p>
+            {errandAccepted && (
+              <p className="errand-accepted-note" style={{ marginBottom: 12 }}>
+                📍 Auto-grouped under <strong>{locationTag}</strong> — change below if needed
+              </p>
+            )}
+
+            <div className="location-grid">
+              {PRESET_LOCATIONS.map(loc => (
+                <button
+                  key={loc.name}
+                  className={`location-btn${locationTag === loc.name ? ' active' : ''}`}
+                  onClick={() => setLocationTag(locationTag === loc.name ? null : loc.name)}
+                >
+                  <span className="location-icon">{loc.icon}</span>
+                  {loc.name}
+                </button>
+              ))}
+
+              {savedLocations.map(loc => (
+                <button
+                  key={loc.id}
+                  className={`location-btn${locationTag === loc.name ? ' active' : ''}`}
+                  onClick={() => setLocationTag(locationTag === loc.name ? null : loc.name)}
+                >
+                  <span className="location-icon">📍</span>
+                  {loc.name}
+                </button>
+              ))}
+
+              {!showCustomLoc ? (
+                <button
+                  className="location-btn location-btn-add"
+                  onClick={() => setShowCustomLoc(true)}
+                >
+                  + Add place
+                </button>
+              ) : (
+                <div className="location-custom-wrap">
+                  <input
+                    autoFocus
+                    className="location-custom-input"
+                    placeholder="Place name…"
+                    value={customLocInput}
+                    onChange={e => setCustomLocInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddCustomLocation() }}
+                  />
+                  <button className="btn-primary" style={{ flex: 'none', height: 44, padding: '0 16px', fontSize: 15 }} onClick={handleAddCustomLocation}>
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="form-actions" style={{ marginTop: 20 }}>
+              <button className="btn-ghost" onClick={handleLocationSave}>Skip</button>
+              <button className="btn-primary" onClick={handleLocationSave}>
+                {!isSplit && mightRecur(text.trim()) ? 'Next →' : 'Save task ✓'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Recurrence step (Feature 3 — single tasks that sound recurring) ── */}
+        {step === 'recurrence' && (
+          <>
+            <p className="form-label">Does this repeat?</p>
+            <div className="recurrence-options">
+              {RECURRENCE_OPTIONS.map(opt => (
+                <button
+                  key={opt.label}
+                  className="recurrence-btn"
+                  onClick={() => handleRecurrencePick(opt.rule())}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </>
         )}
 

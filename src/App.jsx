@@ -6,6 +6,7 @@ import TaskList from './components/TaskList'
 import TaskForm from './components/TaskForm'
 import DoMode from './components/DoMode'
 import CelebrationOverlay from './components/CelebrationOverlay'
+import PhotoViewer from './components/PhotoViewer'
 import './styles/global.css'
 
 export default function App() {
@@ -18,8 +19,8 @@ export default function App() {
   const [savedCount, setSavedCount] = useState(1)
   const [doTask, setDoTask]     = useState(null)
   const [celebratingTask, setCelebratingTask] = useState(null)
+  const [viewingPhoto, setViewingPhoto]       = useState(null)
 
-  // ── Auth loading ────────────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div className="app-loading">
@@ -54,12 +55,10 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Header */}
       <header className="app-header">
         <span className="app-logo">Trigger</span>
       </header>
 
-      {/* Main content */}
       <main className={`app-main${isEmpty ? ' app-main-empty' : ''}`}>
         {view === 'home' ? (
           <Widget
@@ -74,18 +73,17 @@ export default function App() {
             onComplete={handleComplete}
             onDelete={deleteTask}
             onRestore={restoreTask}
+            onViewPhoto={url => setViewingPhoto(url)}
           />
         )}
       </main>
 
-      {/* Saved toast */}
       {saved && (
         <div className="toast">
           {savedCount > 1 ? `${savedCount} tasks saved ✓` : 'Task saved ✓'}
         </div>
       )}
 
-      {/* Dump button */}
       <div className={`dump-area${isEmpty ? ' expanded' : ''}`}>
         <button
           className={`dump-btn${isEmpty ? ' expanded' : ''}`}
@@ -96,7 +94,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* Bottom nav */}
       <nav className="bottom-nav">
         <button
           className={`nav-btn${view === 'home' ? ' active' : ''}`}
@@ -114,15 +111,14 @@ export default function App() {
         </button>
       </nav>
 
-      {/* Task form overlay */}
       {showForm && (
         <TaskForm
+          userId={user?.id}
           onSave={handleSave}
           onCancel={() => setShowForm(false)}
         />
       )}
 
-      {/* Do Mode overlay */}
       {doTask && (
         <DoMode
           task={doTask}
@@ -131,9 +127,15 @@ export default function App() {
         />
       )}
 
-      {/* App-level celebration overlay */}
       {celebratingTask && (
         <CelebrationOverlay taskText={celebratingTask.text} />
+      )}
+
+      {viewingPhoto && (
+        <PhotoViewer
+          url={viewingPhoto}
+          onClose={() => setViewingPhoto(null)}
+        />
       )}
     </div>
   )

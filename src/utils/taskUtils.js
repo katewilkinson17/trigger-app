@@ -131,3 +131,81 @@ export function getSurfacedTasks(tasks, availableMinutes, limit = 3) {
   active.sort((a, b) => priorityScore(b) - priorityScore(a))
   return active.slice(0, limit)
 }
+
+// ── Recurrence helpers ────────────────────────────────────────────────────────
+
+// Returns true if a task text sounds like it might be recurring
+export function mightRecur(text) {
+  const lower = text.toLowerCase()
+  const keywords = ['rent', 'bill', 'timesheet', 'groceries', 'weekly', 'monthly',
+    'subscription', 'insurance', 'mortgage', 'recurring', 'every week', 'every month',
+    'electric', 'internet', 'phone bill', 'water bill', 'gym', 'membership']
+  return keywords.some(w => lower.includes(w))
+}
+
+// Compute the next occurrence date string (YYYY-MM-DD) from a recurrence rule
+export function getNextOccurrenceDate(rule) {
+  const now = new Date()
+
+  if (rule.type === 'monthly') {
+    const dom = rule.dayOfMonth ?? 1
+    // Use this month if day hasn't passed, otherwise next month
+    const candidate = new Date(now.getFullYear(), now.getMonth(), dom)
+    if (candidate <= now) candidate.setMonth(candidate.getMonth() + 1)
+    return candidate.toISOString().split('T')[0]
+  }
+
+  if (rule.type === 'weekly') {
+    const target = rule.dayOfWeek ?? 5  // default Friday
+    const next = new Date(now)
+    let daysUntil = (target - now.getDay() + 7) % 7
+    if (daysUntil === 0) daysUntil = 7  // skip today, use next week
+    next.setDate(now.getDate() + daysUntil)
+    return next.toISOString().split('T')[0]
+  }
+
+  if (rule.type === 'biweekly') {
+    const next = new Date(now)
+    next.setDate(now.getDate() + 14)
+    return next.toISOString().split('T')[0]
+  }
+
+  return null
+}
+
+// How many days before the due date to surface the next recurring task
+export function getRecurrenceBuffer(rule) {
+  if (rule.type === 'monthly') return 7
+  if (rule.type === 'biweekly') return 4
+  return 3  // weekly
+}
+
+// ── Errand intelligence ───────────────────────────────────────────────────────
+
+const GROCERY_KEYWORDS = ['ketchup', 'mustard', 'milk', 'bread', 'eggs', 'grocery',
+  'groceries', 'chicken', 'beef', 'vegetables', 'fruit', 'butter', 'cheese', 'juice',
+  'cereal', 'pasta', 'rice', 'flour', 'sugar', 'coffee', 'tea', 'soda', 'snacks',
+  'chips', 'sauce', 'yogurt', 'produce', 'lettuce', 'tomato', 'onion', 'garlic']
+const PHARMACY_KEYWORDS = ['medicine', 'prescription', 'pharmacy', 'vitamins', 'supplement',
+  'aspirin', 'bandage', 'first aid', 'cvs', 'walgreens', 'rite aid', 'acetone',
+  'ibuprofen', 'tylenol', 'lotion', 'shampoo', 'toothpaste', 'deodorant']
+const ONLINE_KEYWORDS = ['amazon', 'order online', 'ship', 'delivery', 'ebay', 'etsy',
+  'online order', 'buy online', 'order from']
+
+// Guess a likely location for a single task text
+export function detectTaskLocation(text) {
+  const lower = text.toLowerCase()
+  if (GROCERY_KEYWORDS.some(w => lower.includes(w))) return 'Grocery store'
+  if (PHARMACY_KEYWORDS.some(w => lower.includes(w))) return 'Pharmacy'
+  if (ONLINE_KEYWORDS.some(w => lower.includes(w))) return 'Online'
+  return null
+}
+
+// Given an array of task texts, return a location if ALL tasks share one likely location
+export function detectErrandLocation(taskTexts) {
+  if (taskTexts.length < 2) return null
+  const locations = taskTexts.map(detectTaskLocation)
+  if (locations.some(l => !l)) return null       // at least one has no known location
+  const unique = [...new Set(locations)]
+  return unique.length === 1 ? unique[0] : null  // all same location
+}
