@@ -164,6 +164,10 @@ export function useTasks(userId) {
 
   async function addTask({ text, urgency, dread, timeEstimate, familiar, deadline,
                            photoUrl, locationTag, recurrenceRule }) {
+    if (!userId) {
+      setSaveError('Sign-in not ready — wait a moment and try again')
+      return
+    }
     const tempId = crypto.randomUUID()
     const now    = Date.now()
     const optimistic = {

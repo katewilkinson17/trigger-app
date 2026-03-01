@@ -6,26 +6,28 @@ export function useAuth() {
 
   useEffect(() => {
     async function init() {
-      // getUser() makes a real network call to verify the session is still valid.
-      // This catches stale/expired sessions that getSession() (localStorage-only) would miss,
-      // which is the root cause of RLS errors when auth.uid() doesn't match user_id.
+      // getUser() makes a real network call to verify the stored session is valid.
+      // If it returns null, the token is expired/invalid — we must sign out first
+      // because signInAnonymously() returns the *existing* (stale) session when one
+      // is present in localStorage, which causes auth.uid() = NULL → RLS failures.
       const { data: { user: verifiedUser } } = await supabase.auth.getUser()
 
       if (verifiedUser) {
         setUser(verifiedUser)
-      } else {
-        // No valid session — create a persistent anonymous one
-        const { data, error } = await supabase.auth.signInAnonymously()
-        if (error) console.error('Anonymous sign-in failed:', error)
-        setUser(data?.user ?? null)
+        return
       }
+
+      // Clear the stale session so signInAnonymously creates a fresh one
+      await supabase.auth.signOut()
+      const { data, error } = await supabase.auth.signInAnonymously()
+      if (error) console.error('Anonymous sign-in failed:', error)
+      setUser(data?.user ?? null)
     }
 
     init()
 
+    // onAuthStateChange fires when signInAnonymously completes — keep user in sync
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Only update if we have a user — don't overwrite with null mid-flow
-      // (the init() async sequence handles the null → anonymous sign-in path)
       if (session?.user) setUser(session.user)
     })
 
