@@ -775,6 +775,13 @@ body {
   animation: toastIn 0.25s ease, toastOut 0.25s ease 1.4s forwards;
   white-space: nowrap;
 }
+.toast-error {
+  background: #c0392b;
+  animation: toastIn 0.25s ease;
+  white-space: normal;
+  max-width: 90vw;
+  text-align: center;
+}
 
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }

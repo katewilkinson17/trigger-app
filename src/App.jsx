@@ -11,7 +11,7 @@ import './styles/global.css'
 
 export default function App() {
   const { user, loading: authLoading } = useAuth()
-  const { tasks, addTask, completeTask, deleteTask, restoreTask } = useTasks(user?.id)
+  const { tasks, addTask, completeTask, deleteTask, restoreTask, saveError } = useTasks(user?.id)
 
   const [view, setView]         = useState('home') // 'home' | 'list'
   const [showForm, setShowForm] = useState(false)
@@ -81,6 +81,12 @@ export default function App() {
       {saved && (
         <div className="toast">
           {savedCount > 1 ? `${savedCount} tasks saved ✓` : 'Task saved ✓'}
+        </div>
+      )}
+
+      {saveError && (
+        <div className="toast toast-error">
+          ⚠ {saveError}
         </div>
       )}
 

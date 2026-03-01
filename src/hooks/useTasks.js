@@ -93,10 +93,11 @@ async function seedRecurringTasks(userId) {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export function useTasks(userId) {
-  const [tasks, setTasks]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const pendingIds            = useRef(new Set())
-  const tasksRef              = useRef(tasks)
+  const [tasks, setTasks]       = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [saveError, setSaveError] = useState(null)
+  const pendingIds              = useRef(new Set())
+  const tasksRef                = useRef(tasks)
   tasksRef.current = tasks
 
   async function fetchTasks(firstLoad = false) {
@@ -172,8 +173,11 @@ export function useTasks(userId) {
     pendingIds.current.delete(tempId)
 
     if (!error && data) {
+      setSaveError(null)
       setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(data) : t))
     } else {
+      console.error('addTask insert failed:', error)
+      setSaveError(error?.message ?? 'Save failed — check your connection')
       setTasks(prev => prev.filter(t => t.id !== tempId))
     }
   }
@@ -226,5 +230,5 @@ export function useTasks(userId) {
     await supabase.from('tasks').update({ completed_at: null }).eq('id', id)
   }
 
-  return { tasks, loading, addTask, completeTask, deleteTask, restoreTask }
+  return { tasks, loading, saveError, addTask, completeTask, deleteTask, restoreTask }
 }
