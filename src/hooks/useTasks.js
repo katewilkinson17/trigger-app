@@ -100,6 +100,23 @@ export function useTasks(userId) {
   const tasksRef                = useRef(tasks)
   tasksRef.current = tasks
 
+  // Merge server results with local state.
+  // - Optimistic tasks (in pendingIds) are always kept.
+  // - Non-pending tasks present locally but absent from server are kept if not done
+  //   (this handles stale SELECTs that ran before a recent INSERT).
+  // - Server tasks always take priority for tasks it does know about.
+  function mergeTasks(serverTasks) {
+    const serverIds = new Set(serverTasks.map(t => t.id))
+    setTasks(prev => {
+      const optimistic  = prev.filter(t => pendingIds.current.has(t.id))
+      const fromServer  = serverTasks.filter(t => !pendingIds.current.has(t.id))
+      const localMissed = prev.filter(t =>
+        !pendingIds.current.has(t.id) && !serverIds.has(t.id) && !t.done
+      )
+      return [...optimistic, ...localMissed, ...fromServer]
+    })
+  }
+
   async function fetchTasks(firstLoad = false) {
     if (!userId) return
     const { data, error } = await supabase
@@ -115,21 +132,17 @@ export function useTasks(userId) {
         !row.show_after || new Date(row.show_after) <= now
       )
 
-      setTasks(prev => {
-        const optimistic  = prev.filter(t => pendingIds.current.has(t.id))
-        const fromServer  = visible.map(dbToTask).filter(t => !pendingIds.current.has(t.id))
-        return [...optimistic, ...fromServer]
-      })
+      mergeTasks(visible.map(dbToTask))
 
       // Seed example recurring tasks the very first time this user has no tasks
       if (firstLoad && data.length === 0) {
         await seedRecurringTasks(userId)
-        // Re-fetch to show seeds
+        // Re-fetch to show seeds — merge so any task added while seeding isn't lost
         const { data: seeded } = await supabase
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false })
-        if (seeded) setTasks(seeded.map(dbToTask))
+        if (seeded) mergeTasks(seeded.map(dbToTask))
       }
     }
     setLoading(false)
