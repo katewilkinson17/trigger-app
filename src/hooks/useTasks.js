@@ -23,7 +23,7 @@ function dbToTask(row) {
 }
 
 function taskToDb(task, userId) {
-  return {
+  const row = {
     user_id:         userId,
     title:           task.text,
     urgency_score:   task.urgency,
@@ -35,8 +35,12 @@ function taskToDb(task, userId) {
     photo_url:       task.photoUrl       ?? null,
     location_tag:    task.locationTag    ?? null,
     recurrence_rule: task.recurrenceRule ? JSON.stringify(task.recurrenceRule) : null,
-    show_after:      task.showAfter      ?? null,
   }
+  // Only include show_after when set — this column requires migration 002.
+  // Omitting it (rather than passing null) avoids a DB error if the migration
+  // hasn't been run yet, keeping basic task-saving working regardless.
+  if (task.showAfter) row.show_after = task.showAfter
+  return row
 }
 
 function todayStartISO() {

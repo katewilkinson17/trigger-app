@@ -92,6 +92,10 @@ export default function TaskForm({ userId, onSave, onCancel }) {
 
   // Photo
   const [photoUrl, setPhotoUrl]   = useState(null)
+  const [scanError, setScanError] = useState(null)
+
+  // Voice
+  const [voiceError, setVoiceError] = useState(null)
 
   // Per-task rate-screen state
   const [familiar, setFamiliar]             = useState(null)
@@ -122,6 +126,7 @@ export default function TaskForm({ userId, onSave, onCancel }) {
 
   const textRef          = useRef(null)
   const fileRef          = useRef(null)
+  const overlayRef       = useRef(null)
   const estimateAdjusted = useRef(false)
 
   const isSplit     = splitQueue.length > 1
@@ -130,6 +135,25 @@ export default function TaskForm({ userId, onSave, onCancel }) {
   useEffect(() => {
     if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
+
+  // Bug 2 — keep the form above the software keyboard on mobile
+  useEffect(() => {
+    const vv = window.visualViewport
+    const el = overlayRef.current
+    if (!vv || !el) return
+    function onViewportChange() {
+      // When keyboard opens, vv.height shrinks; push the overlay bottom up to match
+      const kbHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      el.style.bottom = `${kbHeight}px`
+    }
+    vv.addEventListener('resize', onViewportChange)
+    vv.addEventListener('scroll', onViewportChange)
+    return () => {
+      vv.removeEventListener('resize', onViewportChange)
+      vv.removeEventListener('scroll', onViewportChange)
+      el.style.bottom = ''
+    }
+  }, [])
 
   // Load saved custom locations when entering location step
   useEffect(() => {
@@ -344,10 +368,21 @@ export default function TaskForm({ userId, onSave, onCancel }) {
     const recognition = new SR()
     recognition.lang = 'en-US'
     recognition.interimResults = false
-    recognition.onstart  = () => setIsRecording(true)
+    recognition.onstart  = () => { setIsRecording(true); setVoiceError(null) }
     recognition.onend    = () => setIsRecording(false)
-    recognition.onerror  = () => setIsRecording(false)
-    recognition.onresult = e => { setText(e.results[0][0].transcript); setIsRecording(false) }
+    recognition.onerror  = e => {
+      setIsRecording(false)
+      if (e.error !== 'aborted') setVoiceError('Mic failed — try again or just type.')
+    }
+    recognition.onnomatch = () => {
+      setIsRecording(false)
+      setVoiceError("Couldn't understand — try again.")
+    }
+    recognition.onresult = e => {
+      setText(e.results[0][0].transcript)
+      setIsRecording(false)
+      setVoiceError(null)
+    }
     recognition.start()
   }
 
@@ -358,29 +393,38 @@ export default function TaskForm({ userId, onSave, onCancel }) {
     if (!file) return
     e.target.value = ''
     setIsScanning(true)
+    setScanError(null)
     try {
-      // Upload original to storage + compress for Claude in parallel
+      // Upload original to storage + compress for Claude in parallel.
+      // Upload failure is non-fatal — the task can still be saved without a photo.
       const [uploadedUrl, base64] = await Promise.all([
-        uploadPhoto(file),
+        uploadPhoto(file).catch(() => null),
         compressImage(file),
       ])
       if (uploadedUrl) setPhotoUrl(uploadedUrl)
 
-      const res = await fetch('/api/scan-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64 }),
-      })
-      if (!res.ok) throw new Error('scan failed')
-      const data = await res.json()
-      if (data.task) setText(data.task)
-      if (data.deadline) {
-        setDeadlineDateVal(data.deadline)
-        setDeadline({ date: data.deadline })
-        setDeadlineExpanded(true)
+      try {
+        const res = await fetch('/api/scan-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64 }),
+        })
+        if (!res.ok) throw new Error(`scan ${res.status}`)
+        const data = await res.json()
+        if (data.task) setText(data.task)
+        if (data.deadline) {
+          setDeadlineDateVal(data.deadline)
+          setDeadline({ date: data.deadline })
+          setDeadlineExpanded(true)
+        }
+        if (!data.task && !data.deadline) {
+          setScanError('Photo scanned — no task text found. Fill it in below.')
+        }
+      } catch {
+        setScanError('Scan failed — fill in the task manually. Photo saved if you attached one.')
       }
     } catch {
-      // silently ignore — user keeps existing text
+      setScanError('Could not read photo — try again.')
     } finally {
       setIsScanning(false)
     }
@@ -405,7 +449,7 @@ export default function TaskForm({ userId, onSave, onCancel }) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="form-overlay">
+    <div className="form-overlay" ref={overlayRef}>
       <div className="form-card">
 
         {/* ── Screen 1: Text entry ── */}
@@ -421,6 +465,10 @@ export default function TaskForm({ userId, onSave, onCancel }) {
                   onChange={e => setText(e.target.value)}
                   placeholder="Type it out, or tap the mic…"
                   rows={3}
+                  onFocus={() => {
+                    // Scroll input into view after keyboard animation settles (Bug 2)
+                    setTimeout(() => textRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 350)
+                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(e) }
                   }}
@@ -443,10 +491,11 @@ export default function TaskForm({ userId, onSave, onCancel }) {
                 onChange={handleFileChange}
               />
               {isScanning && <p className="scanning-hint">Scanning image…</p>}
-              {photoUrl && !isScanning && (
-                <p className="scanning-hint" style={{ color: 'var(--green)' }}>
-                  Photo attached ✓
-                </p>
+              {!isScanning && photoUrl && !scanError && (
+                <p className="scanning-hint" style={{ color: 'var(--green)' }}>Photo attached ✓</p>
+              )}
+              {!isScanning && scanError && (
+                <p className="scanning-hint" style={{ color: 'var(--red)' }}>{scanError}</p>
               )}
               <div className="voice-section">
                 <button
@@ -458,6 +507,7 @@ export default function TaskForm({ userId, onSave, onCancel }) {
                   {isRecording ? '⏹' : '🎤'}
                 </button>
                 <p className="voice-hint">{isRecording ? 'Listening…' : 'Tap to speak'}</p>
+                {voiceError && <p className="scanning-hint" style={{ color: 'var(--red)' }}>{voiceError}</p>}
               </div>
               <div className="form-actions">
                 <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
