@@ -1,31 +1,11 @@
-const CACHE = 'trigger-v1'
-const ASSETS = ['/', '/index.html']
-
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
-  )
-  self.skipWaiting()
-})
-
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  )
-  self.clients.claim()
-})
-
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        const clone = res.clone()
-        caches.open(CACHE).then(cache => cache.put(e.request, clone))
-        return res
-      })
-      .catch(() => caches.match(e.request))
-  )
+// Service worker disabled — self-destruct to clear any previous installation.
+// iOS Safari cached the old SW; this update ensures it is unregistered on next check.
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', () => {
+  self.registration.unregister().then(() => {
+    // Reload any open clients so they get a fully uncached page load
+    return self.clients.matchAll({ type: 'window' })
+  }).then(clients => {
+    clients.forEach(c => c.navigate(c.url))
+  })
 })

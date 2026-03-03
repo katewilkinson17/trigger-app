@@ -14,9 +14,11 @@
     <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Trigger</title>
     <script>
+      // Unregister any previously installed service workers so iOS Safari
+      // stops intercepting fetches and picks up new deployments normally.
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          registrations.forEach(function(r) { r.unregister() })
         })
       }
     </script>
