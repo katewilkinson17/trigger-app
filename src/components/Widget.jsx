@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { getSurfacedTasks, TIME_SLOTS, getTimeEstimateShort } from '../utils/taskUtils'
 
-const URGENCY_DOT   = ['', '🟢', '🟡', '🔴']
 const URGENCY_LABEL = ['', 'Low urgency', 'Medium urgency', 'High urgency']
 
 // Group surfaced tasks by locationTag when 2+ share the same one
@@ -32,6 +31,15 @@ function groupTasks(tasks) {
 
 export default function Widget({ tasks, onComplete, onDump, onDo }) {
   const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[1])
+  const [strikingId, setStrikingId]     = useState(null)
+
+  function handleComplete(taskId) {
+    setStrikingId(taskId)
+    setTimeout(() => {
+      setStrikingId(null)
+      onComplete(taskId)
+    }, 350)
+  }
 
   const surfaced    = getSurfacedTasks(tasks, selectedSlot.minutes)
   const activeTasks = tasks.filter(t => !t.done)
@@ -109,7 +117,7 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
                         </button>
                         <button
                           className="btn-done"
-                          onClick={() => item.tasks.forEach(t => onComplete(t.id))}
+                          onClick={() => item.tasks.forEach(t => handleComplete(t.id))}
                           aria-label="Mark all done"
                           title="Mark all done"
                         >
@@ -120,12 +128,11 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
                   </li>
                 ) : (
                   // ── Regular task card ──
-                  <li key={item.task.id} className="task-card">
+                  <li key={item.task.id} className="task-card" data-urgency={item.task.urgency} aria-label={URGENCY_LABEL[item.task.urgency]}>
                     <div className="task-card-main">
-                      <span className="task-urgency-dot" title={URGENCY_LABEL[item.task.urgency]}>
-                        {URGENCY_DOT[item.task.urgency]}
+                      <span className={`task-text${strikingId === item.task.id ? ' task-text-striking' : ''}`}>
+                        {item.task.text}
                       </span>
-                      <span className="task-text">{item.task.text}</span>
                     </div>
                     <div className="task-card-meta">
                       <div className="task-card-left">
@@ -147,7 +154,7 @@ export default function Widget({ tasks, onComplete, onDump, onDo }) {
                         </button>
                         <button
                           className="btn-done"
-                          onClick={() => onComplete(item.task.id)}
+                          onClick={() => handleComplete(item.task.id)}
                           aria-label="Mark done"
                         >
                           ✓

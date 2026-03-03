@@ -11,7 +11,7 @@ import './styles/global.css'
 
 export default function App() {
   const { user, loading: authLoading } = useAuth()
-  const { tasks, addTask, completeTask, deleteTask, restoreTask, saveError } = useTasks(user?.id)
+  const { tasks, loading: tasksLoading, addTask, completeTask, deleteTask, restoreTask, saveError } = useTasks(user?.id)
 
   const [view, setView]         = useState('home') // 'home' | 'list'
   const [showForm, setShowForm] = useState(false)
@@ -21,7 +21,7 @@ export default function App() {
   const [celebratingTask, setCelebratingTask] = useState(null)
   const [viewingPhoto, setViewingPhoto]       = useState(null)
 
-  if (authLoading) {
+  if (authLoading || tasksLoading) {
     return (
       <div className="app-loading">
         <div className="app-loading-spinner" />

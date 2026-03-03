@@ -136,16 +136,22 @@ export default function TaskForm({ userId, onSave, onCancel }) {
     if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
 
-  // Bug 2 — keep the form above the software keyboard on mobile
+  // Keep the form above the software keyboard on iOS Safari / Chrome
   useEffect(() => {
     const vv = window.visualViewport
     const el = overlayRef.current
     if (!vv || !el) return
+
     function onViewportChange() {
-      // When keyboard opens, vv.height shrinks; push the overlay bottom up to match
-      const kbHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      // vv.height is the visible viewport height excluding the keyboard.
+      // window.innerHeight stays constant even when the keyboard is up.
+      // The gap between them is exactly the keyboard height.
+      const kbHeight = Math.max(0, window.innerHeight - vv.height)
       el.style.bottom = `${kbHeight}px`
     }
+
+    // Run immediately so the form is positioned correctly on first focus
+    onViewportChange()
     vv.addEventListener('resize', onViewportChange)
     vv.addEventListener('scroll', onViewportChange)
     return () => {
@@ -455,7 +461,7 @@ export default function TaskForm({ userId, onSave, onCancel }) {
         {/* ── Screen 1: Text entry ── */}
         {step === 'text' && (
           <>
-            <p className="form-label">What's on your mind?</p>
+            <p className="form-label">Drop a task.</p>
             <form onSubmit={handleTextSubmit}>
               <div className="text-input-wrap">
                 <textarea

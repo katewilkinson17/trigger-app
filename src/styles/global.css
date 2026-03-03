@@ -198,11 +198,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  max-height: 60dvh;
+  -webkit-overflow-scrolling: touch;
 }
 
 .task-card {
   background: var(--surface);
   border: 1.5px solid var(--border);
+  border-left-width: 4px;
   border-radius: var(--radius);
   padding: 16px;
   display: flex;
@@ -210,6 +214,9 @@ body {
   gap: 10px;
   box-shadow: var(--shadow);
 }
+.task-card[data-urgency="1"] { border-left-color: var(--green); }
+.task-card[data-urgency="2"] { border-left-color: var(--yellow); }
+.task-card[data-urgency="3"] { border-left-color: var(--red); }
 
 .task-card-main {
   display: flex;
@@ -217,10 +224,9 @@ body {
   gap: 10px;
 }
 
+/* .task-urgency-dot removed — replaced by data-urgency border on .task-card */
 .task-urgency-dot {
-  font-size: 16px;
-  flex-shrink: 0;
-  margin-top: 1px;
+  display: none;
 }
 
 .task-text {
@@ -966,6 +972,25 @@ body {
   animation: confettiFall 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
+/* ─── Strikethrough animation on task completion ─── */
+.task-text-striking {
+  position: relative;
+}
+.task-text-striking::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 2px;
+  background: var(--text);
+  width: 0;
+  animation: strikethrough 0.32s ease-out forwards;
+}
+@keyframes strikethrough {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
 @keyframes confettiFall {
   0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
   80%  { opacity: 1; }
@@ -1032,8 +1057,18 @@ body {
   margin-bottom: 12px;
 }
 
-/* ─── Voice input ─── */
+/* ─── Voice input — hidden until feature is ready ─── */
 .voice-section {
+  display: none !important;
+}
+
+/* ─── Camera button — hidden until feature is ready ─── */
+.camera-btn {
+  display: none !important;
+}
+
+/* ─── Voice input (original styles kept for re-enable) ─── */
+.voice-section-styles {
   display: flex;
   flex-direction: column;
   align-items: center;
