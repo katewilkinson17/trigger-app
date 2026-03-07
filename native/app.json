@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Trigger",
+    "slug": "trigger-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F5F2"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.trigger.app"
+    },
+    "android": {
+      "package": "com.trigger.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#5B4FE8",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-image-picker",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Trigger needs the microphone to capture voice task input."
+        }
+      ]
+    ]
+  }
+}
