@@ -21,7 +21,10 @@ export default function App() {
   const [celebratingTask, setCelebratingTask] = useState(null)
   const [viewingPhoto, setViewingPhoto]       = useState(null)
 
-  if (authLoading || tasksLoading) {
+  // Show a full-page spinner only while the initial task list loads (after auth).
+  // During auth init (~1-2s) we keep the shell visible but disable the Dump button
+  // so users never hit the "Sign-in not ready" error from useTasks.addTask.
+  if (!authLoading && tasksLoading) {
     return (
       <div className="app-loading">
         <div className="app-loading-spinner" />
@@ -64,7 +67,7 @@ export default function App() {
           <Widget
             tasks={tasks}
             onComplete={handleComplete}
-            onDump={() => setShowForm(true)}
+            onDump={() => { if (!authLoading) setShowForm(true) }}
             onDo={task => setDoTask(task)}
           />
         ) : (
@@ -92,11 +95,12 @@ export default function App() {
 
       <div className={`dump-area${isEmpty ? ' expanded' : ''}`}>
         <button
-          className={`dump-btn${isEmpty ? ' expanded' : ''}`}
+          className={`dump-btn${isEmpty ? ' expanded' : ''}${authLoading ? ' dump-btn-auth-loading' : ''}`}
           onClick={() => setShowForm(true)}
+          disabled={authLoading}
           aria-label="Add new task"
         >
-          + Dump It
+          {authLoading ? 'Loading…' : '+ Dump It'}
         </button>
       </div>
 
