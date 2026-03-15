@@ -136,18 +136,28 @@ export default function TaskForm({ userId, onSave, onCancel }) {
     if (step === 'text' && textRef.current) textRef.current.focus()
   }, [step])
 
-  // Keep the form above the software keyboard on iOS Safari / Chrome
+  // Keep the form above the software keyboard on iOS Safari / Chrome.
+  //
+  // iOS Safari quirk: `position: fixed` elements are painted relative to the
+  // *layout* viewport (window.innerHeight), which does NOT shrink when the
+  // on-screen keyboard appears.  Adjusting `bottom` on the overlay therefore
+  // has no visual effect on iOS because the overlay's containing block never
+  // moves.  Using `transform: translateY` bypasses layout entirely — it shifts
+  // the already-painted layer in the compositor, which *does* work on iOS.
+  //
+  // We include vv.offsetTop in the calculation because the visual viewport can
+  // be offset from the top of the layout viewport when Safari's chrome
+  // (address bar, tab bar) is partially visible or when the page is zoomed.
   useEffect(() => {
     const vv = window.visualViewport
     const el = overlayRef.current
     if (!vv || !el) return
 
     function onViewportChange() {
-      // vv.height is the visible viewport height excluding the keyboard.
-      // window.innerHeight stays constant even when the keyboard is up.
-      // The gap between them is exactly the keyboard height.
-      const kbHeight = Math.max(0, window.innerHeight - vv.height)
-      el.style.bottom = `${kbHeight}px`
+      // Distance between the bottom of the visual viewport and the bottom of
+      // the layout viewport — this equals the keyboard height on iOS Safari.
+      const kbHeight = Math.max(0, window.innerHeight - vv.offsetTop - vv.height)
+      el.style.transform = kbHeight > 0 ? `translateY(-${kbHeight}px)` : ''
     }
 
     // Run immediately so the form is positioned correctly on first focus
@@ -157,7 +167,7 @@ export default function TaskForm({ userId, onSave, onCancel }) {
     return () => {
       vv.removeEventListener('resize', onViewportChange)
       vv.removeEventListener('scroll', onViewportChange)
-      el.style.bottom = ''
+      el.style.transform = ''
     }
   }, [])
 
@@ -471,10 +481,6 @@ export default function TaskForm({ userId, onSave, onCancel }) {
                   onChange={e => setText(e.target.value)}
                   placeholder="Type it out, or tap the mic…"
                   rows={3}
-                  onFocus={() => {
-                    // Scroll input into view after keyboard animation settles (Bug 2)
-                    setTimeout(() => textRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 350)
-                  }}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTextSubmit(e) }
                   }}

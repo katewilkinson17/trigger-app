@@ -311,6 +311,16 @@ body {
   box-shadow: 0 2px 10px rgba(91, 79, 232, 0.3);
 }
 
+/* Auth-initialising state — visually disabled for ~1-2 s on first load */
+.dump-btn.dump-btn-auth-loading,
+.dump-btn:disabled {
+  background: var(--border);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.7;
+}
+
 /* Expanded state when task list is empty */
 .dump-area.expanded {
   height: 33dvh;
