@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, silentSignIn } from '../lib/supabase'
 import { priorityScore, getNextOccurrenceDate, getRecurrenceBuffer } from '../utils/taskUtils'
 
 // ── Shape mapping ─────────────────────────────────────────────────────────────
@@ -164,10 +164,21 @@ export function useTasks(userId) {
 
   async function addTask({ text, urgency, dread, timeEstimate, familiar, deadline,
                            photoUrl, locationTag, recurrenceRule }) {
-    if (!userId) {
-      setSaveError('Sign-in not ready — wait a moment and try again')
-      return
+    // ── Ensure we have a valid userId ─────────────────────────────────────────
+    // If the session was lost (sessionStorage cleared when the PWA was closed,
+    // or iOS Safari cleared it mid-flow), silently create a fresh anonymous
+    // session here rather than showing an error. The user never sees anything.
+    let effectiveUserId = userId
+    if (!effectiveUserId) {
+      console.log('[useTasks] no session at addTask time, re-authenticating silently...')
+      effectiveUserId = await silentSignIn()
+      if (!effectiveUserId) {
+        // Network is down — drop silently; the user can retry when back online.
+        console.warn('[useTasks] silent re-auth failed; dropping addTask')
+        return
+      }
     }
+
     const tempId = crypto.randomUUID()
     const now    = Date.now()
     const optimistic = {
@@ -183,7 +194,7 @@ export function useTasks(userId) {
 
     const { data, error } = await supabase
       .from('tasks')
-      .insert(taskToDb(optimistic, userId))
+      .insert(taskToDb(optimistic, effectiveUserId))
       .select()
       .single()
 
@@ -192,8 +203,39 @@ export function useTasks(userId) {
     if (!error && data) {
       setSaveError(null)
       setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(data) : t))
+      return
+    }
+
+    // ── Handle insert failure ─────────────────────────────────────────────────
+    // Auth errors (expired / revoked JWT causing RLS to see auth.uid() = null)
+    // get one silent retry with a brand-new anonymous session.
+    // Every other error (network, constraint, etc.) shows a brief toast.
+    const isAuthError =
+      error?.status === 401 ||
+      error?.status === 403 ||
+      /jwt|auth|token|expired/i.test(error?.message ?? '')
+
+    if (isAuthError) {
+      console.log('[useTasks] auth error on insert, retrying with fresh session:', error?.message)
+      const newUserId = await silentSignIn()
+      if (newUserId) {
+        const { data: retryData, error: retryError } = await supabase
+          .from('tasks')
+          .insert(taskToDb(optimistic, newUserId))
+          .select()
+          .single()
+
+        if (!retryError && retryData) {
+          setSaveError(null)
+          setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(retryData) : t))
+          return
+        }
+        console.error('[useTasks] retry insert also failed:', retryError)
+      }
+      // Both attempts failed — remove the optimistic task silently; no toast.
+      setTasks(prev => prev.filter(t => t.id !== tempId))
     } else {
-      console.error('addTask insert failed:', error)
+      console.error('[useTasks] addTask insert failed (non-auth):', error)
       setSaveError(error?.message ?? 'Save failed — check your connection')
       setTasks(prev => prev.filter(t => t.id !== tempId))
     }
