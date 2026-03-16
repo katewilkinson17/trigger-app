@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase, silentSignIn } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { priorityScore, getNextOccurrenceDate, getRecurrenceBuffer } from '../utils/taskUtils'
 
 // ── Shape mapping ─────────────────────────────────────────────────────────────
@@ -22,9 +22,9 @@ function dbToTask(row) {
   }
 }
 
-function taskToDb(task, userId) {
+function taskToDb(task, deviceId) {
   const row = {
-    user_id:         userId,
+    user_id:         deviceId,
     title:           task.text,
     urgency_score:   task.urgency,
     dread_score:     task.dread,
@@ -50,7 +50,7 @@ function todayStartISO() {
 }
 
 // Pre-seed two example recurring tasks so the user can see the feature in action.
-async function seedRecurringTasks(userId) {
+async function seedRecurringTasks(deviceId) {
   const now = new Date()
 
   // Next 1st of the month (could be this month if today < 1st — always next month to be safe)
@@ -64,7 +64,7 @@ async function seedRecurringTasks(userId) {
 
   const seeds = [
     {
-      user_id:         userId,
+      user_id:         deviceId,
       title:           'Pay rent',
       urgency_score:   2,
       dread_score:     3,
@@ -76,7 +76,7 @@ async function seedRecurringTasks(userId) {
       // show_after null → visible immediately as a demo example
     },
     {
-      user_id:         userId,
+      user_id:         deviceId,
       title:           'Submit timesheet',
       urgency_score:   2,
       dread_score:     2,
@@ -92,12 +92,12 @@ async function seedRecurringTasks(userId) {
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
-export function useTasks(userId) {
-  const [tasks, setTasks]       = useState([])
-  const [loading, setLoading]   = useState(true)
+export function useTasks(deviceId) {
+  const [tasks, setTasks]         = useState([])
+  const [loading, setLoading]     = useState(true)
   const [saveError, setSaveError] = useState(null)
-  const pendingIds              = useRef(new Set())
-  const tasksRef                = useRef(tasks)
+  const pendingIds                = useRef(new Set())
+  const tasksRef                  = useRef(tasks)
   tasksRef.current = tasks
 
   // Merge server results with local state.
@@ -118,7 +118,7 @@ export function useTasks(userId) {
   }
 
   async function fetchTasks(firstLoad = false) {
-    if (!userId) return
+    if (!deviceId) return
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
@@ -134,9 +134,9 @@ export function useTasks(userId) {
 
       mergeTasks(visible.map(dbToTask))
 
-      // Seed example recurring tasks the very first time this user has no tasks
+      // Seed example recurring tasks the very first time this device has no tasks
       if (firstLoad && data.length === 0) {
-        await seedRecurringTasks(userId)
+        await seedRecurringTasks(deviceId)
         // Re-fetch to show seeds — merge so any task added while seeding isn't lost
         const { data: seeded } = await supabase
           .from('tasks')
@@ -149,7 +149,7 @@ export function useTasks(userId) {
   }
 
   useEffect(() => {
-    if (!userId) { setLoading(false); return }
+    if (!deviceId) { setLoading(false); return }
 
     fetchTasks(true)
 
@@ -158,26 +158,13 @@ export function useTasks(userId) {
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [userId])
+  }, [deviceId])
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   async function addTask({ text, urgency, dread, timeEstimate, familiar, deadline,
                            photoUrl, locationTag, recurrenceRule }) {
-    // ── Ensure we have a valid userId ─────────────────────────────────────────
-    // If the session was lost (sessionStorage cleared when the PWA was closed,
-    // or iOS Safari cleared it mid-flow), silently create a fresh anonymous
-    // session here rather than showing an error. The user never sees anything.
-    let effectiveUserId = userId
-    if (!effectiveUserId) {
-      console.log('[useTasks] no session at addTask time, re-authenticating silently...')
-      effectiveUserId = await silentSignIn()
-      if (!effectiveUserId) {
-        // Network is down — drop silently; the user can retry when back online.
-        console.warn('[useTasks] silent re-auth failed; dropping addTask')
-        return
-      }
-    }
+    if (!deviceId) return
 
     const tempId = crypto.randomUUID()
     const now    = Date.now()
@@ -194,7 +181,7 @@ export function useTasks(userId) {
 
     const { data, error } = await supabase
       .from('tasks')
-      .insert(taskToDb(optimistic, effectiveUserId))
+      .insert(taskToDb(optimistic, deviceId))
       .select()
       .single()
 
@@ -203,39 +190,8 @@ export function useTasks(userId) {
     if (!error && data) {
       setSaveError(null)
       setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(data) : t))
-      return
-    }
-
-    // ── Handle insert failure ─────────────────────────────────────────────────
-    // Auth errors (expired / revoked JWT causing RLS to see auth.uid() = null)
-    // get one silent retry with a brand-new anonymous session.
-    // Every other error (network, constraint, etc.) shows a brief toast.
-    const isAuthError =
-      error?.status === 401 ||
-      error?.status === 403 ||
-      /jwt|auth|token|expired/i.test(error?.message ?? '')
-
-    if (isAuthError) {
-      console.log('[useTasks] auth error on insert, retrying with fresh session:', error?.message)
-      const newUserId = await silentSignIn()
-      if (newUserId) {
-        const { data: retryData, error: retryError } = await supabase
-          .from('tasks')
-          .insert(taskToDb(optimistic, newUserId))
-          .select()
-          .single()
-
-        if (!retryError && retryData) {
-          setSaveError(null)
-          setTasks(prev => prev.map(t => t.id === tempId ? dbToTask(retryData) : t))
-          return
-        }
-        console.error('[useTasks] retry insert also failed:', retryError)
-      }
-      // Both attempts failed — remove the optimistic task silently; no toast.
-      setTasks(prev => prev.filter(t => t.id !== tempId))
     } else {
-      console.error('[useTasks] addTask insert failed (non-auth):', error)
+      console.error('addTask insert failed:', error)
       setSaveError(error?.message ?? 'Save failed — check your connection')
       setTasks(prev => prev.filter(t => t.id !== tempId))
     }
@@ -272,7 +228,7 @@ export function useTasks(userId) {
           recurrenceRule: task.recurrenceRule,
           showAfter:      showAfter.toISOString(),
         }
-        await supabase.from('tasks').insert(taskToDb(nextTask, userId))
+        await supabase.from('tasks').insert(taskToDb(nextTask, deviceId))
       }
     }
   }
