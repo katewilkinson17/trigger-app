@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase, silentSignIn } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { priorityScore, getNextOccurrenceDate, getRecurrenceBuffer } from '../utils/taskUtils'
 
 // ── Shape mapping ─────────────────────────────────────────────────────────────
